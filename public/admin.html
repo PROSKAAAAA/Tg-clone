@@ -3,209 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TG Admin Panel</title>
+    <title>Admin Panel</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #0a0e17;
-            color: #fff;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .card {
-            background: #0f1520;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid #1e2d45;
-        }
-        .card h2 {
-            margin-bottom: 16px;
-            font-size: 18px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        .stat-card {
-            background: #0f1520;
-            border: 1px solid #1e2d45;
-            border-radius: 12px;
-            padding: 20px;
-        }
-        .stat-value {
-            font-size: 32px;
-            font-weight: 700;
-            color: #00d4ff;
-        }
-        .stat-label {
-            font-size: 13px;
-            color: #7a9ab8;
-            margin-top: 4px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #1e2d45;
-        }
-        th {
-            color: #7a9ab8;
-            font-weight: 500;
-            font-size: 12px;
-        }
-        button {
-            background: #00d4ff;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            font-size: 12px;
-            color: #000;
-            margin-right: 6px;
-        }
-        button.danger {
-            background: #ff4757;
-            color: #fff;
-        }
-        button.warning {
-            background: #f5a623;
-            color: #000;
-        }
-        input {
-            background: #0a0e17;
-            border: 1px solid #1e2d45;
-            padding: 8px 12px;
-            border-radius: 8px;
-            color: #fff;
-            width: 200px;
-        }
-        .login-box {
-            max-width: 400px;
-            margin: 100px auto;
-            text-align: center;
-        }
-        .login-box input {
-            width: 100%;
-            margin: 12px 0;
-        }
-        .login-box button {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-        }
-        .error {
-            color: #ff4757;
-            margin-top: 12px;
-        }
-        .report-item {
-            border-bottom: 1px solid #1e2d45;
-            padding: 12px;
-        }
-        .report-item:last-child {
-            border-bottom: none;
-        }
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            margin-left: 8px;
-        }
-        .badge.pending {
-            background: #f5a62320;
-            color: #f5a623;
-            border: 1px solid #f5a62340;
-        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui;background:#0a0e17;color:#fff;padding:20px}
+        .card{background:#0f1520;border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #1e2d45}
+        .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px}
+        .stat{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;padding:20px;text-align:center}
+        .stat-value{font-size:32px;font-weight:700;color:#00d4ff}
+        .stat-label{font-size:12px;color:#aaa}
+        table{width:100%;border-collapse:collapse}
+        th,td{padding:12px;text-align:left;border-bottom:1px solid #1e2d45}
+        input{background:#0a0e17;border:1px solid #1e2d45;padding:8px 12px;border-radius:8px;color:#fff;width:100%}
+        button{background:#00d4ff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;margin:2px}
+        .btn-danger{background:#ff4757;color:#fff}
+        .btn-warning{background:#f5a623;color:#000}
+        .login-box{max-width:400px;margin:100px auto;text-align:center}
+        .error{color:#ff4757;margin-top:12px}
+        .report-item{border-bottom:1px solid #1e2d45;padding:12px}
+        .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;background:#f5a62320;color:#f5a623;border:1px solid #f5a62340}
     </style>
 </head>
 <body>
+
 <div id="loginBox" class="card login-box">
     <h2>🛡️ Админ-панель</h2>
-    <input type="password" id="adminPassword" placeholder="Введите пароль">
+    <input type="password" id="adminPass" placeholder="Пароль" style="margin:12px 0">
     <button onclick="adminLogin()">Войти</button>
     <div id="loginError" class="error"></div>
 </div>
 
-<div id="adminContent" style="display: none;">
-    <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h1>🛡️ TG Admin Panel</h1>
-            <button onclick="adminLogout()" class="danger">Выйти</button>
+<div id="adminPanel" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h1>🛡️ TG Admin Panel</h1>
+        <button onclick="adminLogout()" class="btn-danger">Выйти</button>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="card">
+        <h2>👥 Пользователи</h2>
+        <input type="text" id="searchUsers" placeholder="Поиск..." onkeyup="filterUsers()" style="margin-bottom:16px">
+        <div style="overflow-x:auto">
+            <table id="usersTable">
+                <thead><tr><th>Пользователь</th><th>⭐</th><th>Статус</th><th>Действия</th></tr></thead>
+                <tbody id="usersList"></tbody>
+            </table>
         </div>
-        
-        <div class="stats-grid" id="statsGrid"></div>
-        
-        <div class="card">
-            <h2>👥 Пользователи</h2>
-            <div style="margin-bottom: 16px;">
-                <input type="text" id="userSearch" placeholder="Поиск по имени..." onkeyup="filterUsers()">
-            </div>
-            <div style="overflow-x: auto;">
-                <table id="usersTable">
-                    <thead>
-                        <tr><th>Пользователь</th><th>⭐ Звёзды</th><th>Статус</th><th>Действия</th></tr>
-                    </thead>
-                    <tbody id="usersList"></tbody>
-                </table>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>🚨 Жалобы</h2>
-            <div id="reportsList"></div>
-        </div>
+    </div>
+    <div class="card">
+        <h2>🚨 Жалобы</h2>
+        <div id="reportsList"></div>
     </div>
 </div>
 
 <script>
     const API_URL = '';
-    let currentAdmin = false;
     let allUsers = [];
     
-    function adminLogin() {
-        const pass = document.getElementById('adminPassword').value;
-        if (pass === 'admin2024') {
-            currentAdmin = true;
+    async function adminLogin() {
+        const pass = document.getElementById('adminPass').value;
+        if(pass === 'admin2024') {
             document.getElementById('loginBox').style.display = 'none';
-            document.getElementById('adminContent').style.display = 'block';
-            loadStats();
-            loadUsers();
-            loadReports();
+            document.getElementById('adminPanel').style.display = 'block';
+            loadStats(); loadUsers(); loadReports();
         } else {
             document.getElementById('loginError').innerText = 'Неверный пароль';
         }
     }
     
     function adminLogout() {
-        currentAdmin = false;
         document.getElementById('loginBox').style.display = 'block';
-        document.getElementById('adminContent').style.display = 'none';
-        document.getElementById('adminPassword').value = '';
+        document.getElementById('adminPanel').style.display = 'none';
+        document.getElementById('adminPass').value = '';
     }
     
     async function loadStats() {
         try {
             const res = await fetch(`${API_URL}/api/stats`);
             const stats = await res.json();
-            document.getElementById('statsGrid').innerHTML = `
-                <div class="stat-card"><div class="stat-value">${stats.users || 0}</div><div class="stat-label">👥 Пользователей</div></div>
-                <div class="stat-card"><div class="stat-value">${stats.messages || 0}</div><div class="stat-label">💬 Сообщений</div></div>
-                <div class="stat-card"><div class="stat-value">${stats.pendingReports || 0}</div><div class="stat-label">⏳ Жалоб ожидает</div></div>
+            document.getElementById('stats').innerHTML = `
+                <div class="stat"><div class="stat-value">${stats.users||0}</div><div class="stat-label">👥 Пользователей</div></div>
+                <div class="stat"><div class="stat-value">${stats.messages||0}</div><div class="stat-label">💬 Сообщений</div></div>
+                <div class="stat"><div class="stat-value">${stats.pendingReports||0}</div><div class="stat-label">🚨 Жалоб ожидает</div></div>
             `;
         } catch(e) { console.error(e); }
     }
@@ -214,30 +92,26 @@
         try {
             const res = await fetch(`${API_URL}/api/users`);
             allUsers = await res.json();
-            renderUsersTable(allUsers);
+            renderUsers(allUsers);
         } catch(e) { console.error(e); }
     }
     
     function filterUsers() {
-        const search = document.getElementById('userSearch').value.toLowerCase();
-        const filtered = allUsers.filter(u => 
-            u.name.toLowerCase().includes(search) || 
-            u.username.toLowerCase().includes(search)
-        );
-        renderUsersTable(filtered);
+        const search = document.getElementById('searchUsers').value.toLowerCase();
+        const filtered = allUsers.filter(u => u.name.toLowerCase().includes(search) || u.username.toLowerCase().includes(search));
+        renderUsers(filtered);
     }
     
-    function renderUsersTable(users) {
-        const tbody = document.getElementById('usersList');
-        tbody.innerHTML = users.map(u => `
+    function renderUsers(users) {
+        document.getElementById('usersList').innerHTML = users.map(u => `
             <tr>
-                <td><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${escapeHtml(u.username)}</span></td>
-                <td>⭐ ${u.stars || 0}</td>
-                <td>${u.banned ? '<span style="color:#ff4757">⛔ Забанен</span>' : (u.muted ? '<span style="color:#f5a623">🔇 Замьючен</span>' : '<span style="color:#00e676">✅ Активен</span>')}</td>
+                <td><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></td>
+                <td>⭐ ${u.stars||0}</td>
+                <td>${u.banned ? '<span style="color:#ff4757">⛔ Забанен</span>' : u.muted ? '<span style="color:#f5a623">🔇 Замьючен</span>' : '<span style="color:#00e676">✅ Активен</span>'}</td>
                 <td>
-                    <button onclick="addStars('${u.id}')">⭐ +</button>
-                    <button onclick="toggleBan('${u.id}', ${!u.banned})" class="${!u.banned ? 'danger' : ''}">${u.banned ? 'Разбан' : 'Бан'}</button>
-                    <button onclick="toggleMute('${u.id}', ${!u.muted})" class="${!u.muted ? 'warning' : ''}">${u.muted ? 'Снять мьют' : 'Мьют'}</button>
+                    <button onclick="addStars('${u.id}')">⭐+</button>
+                    <button onclick="toggleBan('${u.id}', ${!u.banned})" class="${!u.banned ? 'btn-danger' : ''}">${u.banned ? 'Разбан' : 'Бан'}</button>
+                    <button onclick="toggleMute('${u.id}', ${!u.muted})" class="${!u.muted ? 'btn-warning' : ''}">${u.muted ? 'Снять мьют' : 'Мьют'}</button>
                 </td>
             </tr>
         `).join('');
@@ -245,12 +119,11 @@
     
     async function addStars(userId) {
         const amount = prompt('Сколько звёзд выдать?', '100');
-        if (!amount || isNaN(amount)) return;
+        if(!amount) return;
         const user = allUsers.find(u => u.id === userId);
         await fetch(`${API_URL}/api/users/${userId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stars: (user.stars || 0) + parseInt(amount) })
+            method:'PUT', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ stars: (user.stars||0) + parseInt(amount) })
         });
         showToast(`Выдано ${amount} ⭐`);
         loadUsers();
@@ -258,9 +131,8 @@
     
     async function toggleBan(userId, ban) {
         await fetch(`${API_URL}/api/users/${userId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ banned: ban })
+            method:'PUT', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ banned: ban })
         });
         loadUsers();
         showToast(ban ? 'Пользователь забанен' : 'Бан снят');
@@ -268,9 +140,8 @@
     
     async function toggleMute(userId, mute) {
         await fetch(`${API_URL}/api/users/${userId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ muted: mute })
+            method:'PUT', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ muted: mute })
         });
         loadUsers();
         showToast(mute ? 'Пользователь замьючен' : 'Мьют снят');
@@ -281,20 +152,19 @@
             const res = await fetch(`${API_URL}/api/reports`);
             const reports = await res.json();
             const pending = reports.filter(r => r.status === 'pending');
-            const container = document.getElementById('reportsList');
-            if (pending.length === 0) {
-                container.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">✨ Нет жалоб</div>';
+            if(pending.length === 0) {
+                document.getElementById('reportsList').innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">✨ Нет жалоб</div>';
                 return;
             }
-            container.innerHTML = pending.map(r => `
+            document.getElementById('reportsList').innerHTML = pending.map(r => `
                 <div class="report-item">
-                    <div><strong>⚠️ ${escapeHtml(r.reason)}</strong> <span class="badge pending">ожидает</span></div>
-                    <div style="font-size:13px;margin:8px 0">📝 от @${escapeHtml(r.fromUserId)} на @${escapeHtml(r.againstUserId)}</div>
-                    ${r.comment ? `<div style="background:#0a0e17;padding:8px;border-radius:8px;margin:8px 0;font-size:13px">💬 ${escapeHtml(r.comment)}</div>` : ''}
+                    <div><strong>⚠️ ${escapeHtml(r.reason)}</strong> <span class="badge">ожидает</span></div>
+                    <div style="margin:8px 0">📝 от @${escapeHtml(r.fromUserId)} на @${escapeHtml(r.againstUserId)}</div>
+                    ${r.comment ? `<div style="background:#0a0e17;padding:8px;border-radius:8px;margin:8px 0">💬 ${escapeHtml(r.comment)}</div>` : ''}
                     <div>
                         <button onclick="resolveReport('${r.id}', 'ban')">🚫 Бан</button>
                         <button onclick="resolveReport('${r.id}', 'mute')">🔇 Мьют</button>
-                        <button onclick="resolveReport('${r.id}', 'reject')" class="danger">✗ Отказать</button>
+                        <button onclick="resolveReport('${r.id}', 'reject')" class="btn-danger">✗ Отказать</button>
                     </div>
                 </div>
             `).join('');
@@ -302,41 +172,27 @@
     }
     
     async function resolveReport(reportId, action) {
-        let status = action === 'reject' ? 'rejected' : 'resolved';
+        const status = action === 'reject' ? 'rejected' : 'resolved';
         await fetch(`${API_URL}/api/reports/${reportId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status, action: action === 'reject' ? '' : action })
+            method:'PUT', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ status, action: action === 'reject' ? '' : action })
         });
         showToast('Жалоба обработана');
-        loadStats();
-        loadReports();
-        loadUsers();
+        loadStats(); loadReports(); loadUsers();
     }
     
     function showToast(msg) {
         const toast = document.createElement('div');
         toast.textContent = msg;
-        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2b5278;padding:10px 20px;border-radius:20px;z-index:1000;font-size:13px';
+        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2b5278;padding:10px 20px;border-radius:20px;z-index:1000';
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 2500);
     }
     
     function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+        if(!str) return '';
+        return String(str).replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;');
     }
-    
-    window.addStars = addStars;
-    window.toggleBan = toggleBan;
-    window.toggleMute = toggleMute;
-    window.resolveReport = resolveReport;
-    window.filterUsers = filterUsers;
 </script>
 </body>
 </html>
