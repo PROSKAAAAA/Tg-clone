@@ -12,7 +12,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// ============ SQLite ============
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('tg_clone.db');
 
@@ -41,8 +40,6 @@ db.serialize(() => {
         data TEXT,
         fileName TEXT,
         fileSize TEXT,
-        giftName TEXT,
-        giftEmoji TEXT,
         ts INTEGER,
         read INTEGER DEFAULT 0
     )`);
@@ -56,57 +53,16 @@ db.serialize(() => {
         status TEXT,
         ts INTEGER
     )`);
-    
-    db.run(`CREATE TABLE IF NOT EXISTS gifts (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        emoji TEXT,
-        type TEXT,
-        price INTEGER,
-        stock INTEGER,
-        fileUrl TEXT,
-        rarity TEXT
-    )`);
-    
-    db.get("SELECT COUNT(*) as count FROM gifts", (err, row) => {
-        if (row && row.count === 0) {
-            const gifts = [
-                ['g1', 'Сердечко', '❤️', 'emoji', 50, 100, '', 'common'],
-                ['g2', 'Корона', '👑', 'emoji', 200, 50, '', 'rare'],
-                ['g3', 'Звезда', '⭐', 'emoji', 100, 200, '', 'common'],
-                ['g4', 'Алмаз', '💎', 'tgs', 500, 20, '', 'legendary']
-            ];
-            const stmt = db.prepare("INSERT INTO gifts VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            gifts.forEach(g => stmt.run(g));
-            stmt.finalize();
-        }
-    });
 });
 
-// ============ NFT КОЛЛЕКЦИИ (JSON файл) ============
-const NFT_FILE = 'nft_collections.json';
-if (!fs.existsSync(NFT_FILE)) {
-    fs.writeFileSync(NFT_FILE, JSON.stringify([]));
-}
-
-function getNFTCollections() {
-    try {
-        return JSON.parse(fs.readFileSync(NFT_FILE, 'utf8'));
-    } catch {
-        return [];
-    }
-}
-
-function saveNFTCollections(collections) {
-    fs.writeFileSync(NFT_FILE, JSON.stringify(collections, null, 2));
-}
-
-// ============ ГЛАВНАЯ СТРАНИЦА ============
 app.get('/', (req, res) => {
-    res.redirect('/messenger.html');
+    res.sendFile(path.join(__dirname, 'public', 'messenger.html'));
 });
 
-// ============ API ПОЛЬЗОВАТЕЛИ ============
+app.get('/admin.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 app.post('/api/register', async (req, res) => {
     const { name, username, password } = req.body;
     
@@ -141,17 +97,14 @@ app.post('/api/login', async (req, res) => {
                 id: user.id,
                 name: user.name,
                 username: user.username,
-                avatar: user.avatar,
-                stars: user.stars || 0,
-                bio: user.bio,
-                tags: user.tags ? JSON.parse(user.tags) : []
+                stars: user.stars || 0
             }
         });
     });
 });
 
 app.get('/api/users', (req, res) => {
-    db.all("SELECT id, name, username, avatar, stars, tags, banned, muted, bio FROM users", (err, users) => {
+    db.all("SELECT id, name, username, stars, banned, muted FROM users", (err, users) => {
         if (err) return res.status(500).json([]);
         res.json(users);
     });
@@ -166,34 +119,16 @@ app.get('/api/users/:id', (req, res) => {
 
 app.put('/api/users/:id', (req, res) => {
     const { id } = req.params;
-    const { stars, banned, muted, name, bio, avatar, tags } = req.body;
+    const { stars, banned, muted, name } = req.body;
     
-    if (stars !== undefined) {
-        db.run("UPDATE users SET stars = ? WHERE id = ?", [stars, id]);
-    }
-    if (banned !== undefined) {
-        db.run("UPDATE users SET banned = ? WHERE id = ?", [banned ? 1 : 0, id]);
-    }
-    if (muted !== undefined) {
-        db.run("UPDATE users SET muted = ? WHERE id = ?", [muted ? 1 : 0, id]);
-    }
-    if (name !== undefined) {
-        db.run("UPDATE users SET name = ? WHERE id = ?", [name, id]);
-    }
-    if (bio !== undefined) {
-        db.run("UPDATE users SET bio = ? WHERE id = ?", [bio, id]);
-    }
-    if (avatar !== undefined) {
-        db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatar, id]);
-    }
-    if (tags !== undefined) {
-        db.run("UPDATE users SET tags = ? WHERE id = ?", [JSON.stringify(tags), id]);
-    }
+    if (stars !== undefined) db.run("UPDATE users SET stars = ? WHERE id = ?", [stars, id]);
+    if (banned !== undefined) db.run("UPDATE users SET banned = ? WHERE id = ?", [banned ? 1 : 0, id]);
+    if (muted !== undefined) db.run("UPDATE users SET muted = ? WHERE id = ?", [muted ? 1 : 0, id]);
+    if (name !== undefined) db.run("UPDATE users SET name = ? WHERE id = ?", [name, id]);
     
     res.json({ success: true });
 });
 
-// ============ СООБЩЕНИЯ ============
 app.get('/api/messages/:userId', (req, res) => {
     const { userId } = req.params;
     const currentUserId = req.query.currentUserId;
@@ -205,13 +140,13 @@ app.get('/api/messages/:userId', (req, res) => {
 });
 
 app.post('/api/messages', (req, res) => {
-    const { from, to, type, text, data, fileName, fileSize, giftName, giftEmoji } = req.body;
+    const { from, to, type, text } = req.body;
     const chatKey = [from, to].sort().join('_');
     const messageId = uuidv4();
     
-    db.run(`INSERT INTO messages (id, chatKey, fromUserId, toUserId, type, text, data, fileName, fileSize, giftName, giftEmoji, ts, read)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [messageId, chatKey, from, to, type, text || null, data || null, fileName || null, fileSize || null, giftName || null, giftEmoji || null, Date.now(), 0],
+    db.run(`INSERT INTO messages (id, chatKey, fromUserId, toUserId, type, text, ts, read)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [messageId, chatKey, from, to, type, text || null, Date.now(), 0],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
@@ -225,7 +160,6 @@ app.get('/api/messages/all', (req, res) => {
     });
 });
 
-// ============ ЖАЛОБЫ ============
 app.get('/api/reports', (req, res) => {
     db.all("SELECT * FROM reports ORDER BY ts DESC", (err, reports) => {
         res.json(reports || []);
@@ -265,86 +199,18 @@ app.put('/api/reports/:id', (req, res) => {
     });
 });
 
-// ============ NFT ПОДАРКИ ============
-app.get('/api/nft/collections', (req, res) => {
-    res.json(getNFTCollections());
-});
-
-app.post('/api/nft/collections', (req, res) => {
-    const collections = getNFTCollections();
-    const newCollection = {
-        id: Date.now().toString(),
-        ...req.body,
-        minted: 0,
-        nfts: [],
-        recentMints: []
-    };
-    collections.push(newCollection);
-    saveNFTCollections(collections);
-    res.json({ success: true });
-});
-
-app.put('/api/nft/collections/:id', (req, res) => {
-    const collections = getNFTCollections();
-    const index = collections.findIndex(c => c.id === req.params.id);
-    if (index !== -1) {
-        collections[index] = { ...collections[index], ...req.body };
-        saveNFTCollections(collections);
-    }
-    res.json({ success: true });
-});
-
-app.delete('/api/nft/collections/:id', (req, res) => {
-    let collections = getNFTCollections();
-    collections = collections.filter(c => c.id !== req.params.id);
-    saveNFTCollections(collections);
-    res.json({ success: true });
-});
-
-app.post('/api/nft/mint', (req, res) => {
-    const { collectionId, serialNumber, ownerId } = req.body;
-    const collections = getNFTCollections();
-    const collection = collections.find(c => c.id === collectionId);
-    
-    if (!collection) return res.status(404).json({ error: 'Коллекция не найдена' });
-    if (collection.maxSupply > 0 && collection.minted >= collection.maxSupply) {
-        return res.status(400).json({ error: 'Лимит коллекции исчерпан' });
-    }
-    
-    const serial = serialNumber || `${collectionId.slice(-4)}-${String(collection.minted + 1).padStart(4, '0')}`;
-    const newNFT = {
-        id: Date.now().toString(),
-        serialNumber: serial,
-        ownerId: ownerId || null,
-        mintedAt: Date.now()
-    };
-    
-    collection.nfts = collection.nfts || [];
-    collection.nfts.push(newNFT);
-    collection.minted = collection.nfts.length;
-    collection.recentMints = [newNFT, ...(collection.recentMints || [])].slice(0, 10);
-    
-    saveNFTCollections(collections);
-    res.json({ success: true, serialNumber: serial });
-});
-
-// ============ СТАТИСТИКА ============
 app.get('/api/stats', (req, res) => {
     db.get("SELECT COUNT(*) as count FROM users", (err, users) => {
         db.get("SELECT COUNT(*) as count FROM messages", (err, messages) => {
             db.get("SELECT COUNT(*) as count FROM reports", (err, reports) => {
                 db.get("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'", (err, pending) => {
                     db.get("SELECT COUNT(*) as count FROM users WHERE banned = 1", (err, banned) => {
-                        const collections = getNFTCollections();
-                        const totalNFTs = collections.reduce((sum, c) => sum + (c.minted || 0), 0);
                         res.json({
                             users: users?.count || 0,
                             messages: messages?.count || 0,
                             reports: reports?.count || 0,
                             pendingReports: pending?.count || 0,
-                            bannedUsers: banned?.count || 0,
-                            gifts: collections.length,
-                            totalNFTs: totalNFTs
+                            bannedUsers: banned?.count || 0
                         });
                     });
                 });
@@ -357,11 +223,12 @@ app.post('/api/admin/reset', (req, res) => {
     db.run("DELETE FROM users");
     db.run("DELETE FROM messages");
     db.run("DELETE FROM reports");
-    saveNFTCollections([]);
     res.json({ success: true });
 });
 
-// ЗАПУСК
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
+    console.log(`📱 Мессенджер: http://localhost:${PORT}/`);
+    console.log(`🛡️ Админка: http://localhost:${PORT}/admin.html`);
+    console.log(`🔑 Админ пароль: admin2024`);
 });
