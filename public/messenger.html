@@ -2,34 +2,220 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Telegram Messenger</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui;background:#0e1621;color:#fff;height:100vh}
+        .auth-screen{position:fixed;inset:0;background:#0e1621;display:flex;align-items:center;justify-content:center;z-index:100}
+        .auth-box{background:#17212b;border-radius:20px;padding:40px;width:400px}
+        input{width:100%;padding:12px;margin-bottom:12px;border-radius:8px;border:none;background:#0e1621;color:#fff}
+        button{background:#2b88d8;border:none;padding:12px;border-radius:8px;color:#fff;font-weight:600;cursor:pointer}
+        .app{display:flex;height:100vh}
+        .sidebar{width:320px;background:#17212b;border-right:1px solid #293d4f;display:flex;flex-direction:column}
+        .main{flex:1;display:flex;flex-direction:column}
+        .chat-list{flex:1;overflow-y:auto}
+        .chat-item{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer}
+        .chat-item:hover{background:#232e3c}
+        .avatar{width:48px;height:48px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:20px}
+        .messages{flex:1;overflow-y:auto;padding:16px}
+        .message{margin-bottom:12px;display:flex}
+        .message.out{justify-content:flex-end}
+        .msg-bubble{background:#2b5278;border-radius:12px;padding:8px 12px;max-width:65%}
+        .message.in .msg-bubble{background:#182533}
+        .input-area{padding:12px;border-top:1px solid #293d4f}
+        .input-row{display:flex;gap:10px}
+        .msg-input{flex:1;background:#232e3c;border:none;border-radius:22px;padding:10px 16px;color:#fff;resize:none}
+        .header{padding:12px 16px;border-bottom:1px solid #293d4f}
+        .icon-btn{background:#232e3c;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;color:#fff}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:none;align-items:center;justify-content:center}
+        .modal-overlay.active{display:flex}
+        .modal{background:#17212b;border-radius:16px;width:400px;padding:20px}
+    </style>
+</head>
+<body>
 
-        :root {
-            --bg: #17212b;
-            --bg2: #0e1621;
-            --bg3: #232e3c;
-            --bg4: #2b5278;
-            --accent: #2b88d8;
-            --accent2: #5ac8fa;
-            --text: #fff;
-            --text2: #aaa;
-            --text3: #6c7883;
-            --green: #4dba87;
-            --red: #e05c65;
-            --yellow: #f5a623;
-            --border: #293d4f;
-            --msg-out: #2b5278;
-            --msg-in: #182533;
-        }
+<div id="authScreen" class="auth-screen">
+    <div class="auth-box">
+        <h2 style="text-align:center;margin-bottom:24px">📱 Telegram</h2>
+        <div style="display:flex;gap:10px;margin-bottom:20px">
+            <button style="flex:1" onclick="showTab('login')">Вход</button>
+            <button style="flex:1;background:#555" onclick="showTab('register')">Регистрация</button>
+        </div>
+        <div id="loginForm">
+            <input type="text" id="loginUsername" placeholder="Имя пользователя">
+            <input type="password" id="loginPassword" placeholder="Пароль">
+            <button onclick="login()">Войти</button>
+        </div>
+        <div id="registerForm" style="display:none">
+            <input type="text" id="regName" placeholder="Ваше имя">
+            <input type="text" id="regUsername" placeholder="Имя пользователя">
+            <input type="password" id="regPassword" placeholder="Пароль">
+            <button onclick="register()">Зарегистрироваться</button>
+        </div>
+        <div id="errorMsg" style="color:#e05c65;margin-top:12px;text-align:center"></div>
+    </div>
+</div>
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg2);
+<div id="app" class="app" style="display:none">
+    <div class="sidebar">
+        <div class="header" style="display:flex;justify-content:space-between;align-items:center">
+            <div><strong id="userName"></strong><br><span id="userStars" style="font-size:12px;color:#f5a623">⭐ 0</span></div>
+            <button class="icon-btn" onclick="logout()">🚪</button>
+        </div>
+        <div style="padding:8px 16px"><input type="text" id="searchInput" placeholder="Поиск..." style="width:100%;background:#232e3c;border:none;border-radius:20px;padding:8px 12px;color:#fff"></div>
+        <div class="chat-list" id="chatList"></div>
+    </div>
+    <div class="main">
+        <div class="header" id="chatHeader" style="display:none">
+            <div class="avatar" id="chatAvatar" style="width:40px;height:40px;font-size:16px"></div>
+            <div style="flex:1;margin-left:12px"><strong id="chatName"></strong></div>
+        </div>
+        <div id="emptyChat" style="flex:1;display:flex;align-items:center;justify-content:center;color:#aaa">Выберите чат</div>
+        <div id="chatView" style="display:none;flex-direction:column;flex:1">
+            <div class="messages" id="messages"></div>
+            <div class="input-area">
+                <div class="input-row">
+                    <textarea class="msg-input" id="msgInput" rows="1" placeholder="Сообщение..."></textarea>
+                    <button onclick="sendMessage()">➤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_URL = '';
+    let currentUser = null;
+    let currentChatId = null;
+    let allUsers = [];
+
+    function showTab(tab) {
+        document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
+        document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
+    }
+
+    async function login() {
+        const username = document.getElementById('loginUsername').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        if(!username || !password) { showError('Заполните поля'); return; }
+        try {
+            const res = await fetch(`${API_URL}/api/login`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if(data.success) {
+                currentUser = data.user;
+                document.getElementById('authScreen').style.display = 'none';
+                document.getElementById('app').style.display = 'flex';
+                document.getElementById('userName').innerText = currentUser.name;
+                document.getElementById('userStars').innerHTML = `⭐ ${currentUser.stars}`;
+                loadUsers();
+                startPolling();
+            } else { showError(data.error); }
+        } catch(e) { showError('Ошибка сервера'); }
+    }
+
+    async function register() {
+        const name = document.getElementById('regName').value.trim();
+        const username = document.getElementById('regUsername').value.trim();
+        const password = document.getElementById('regPassword').value;
+        if(!name || !username || !password) { showError('Заполните поля'); return; }
+        if(password.length < 4) { showError('Пароль минимум 4 символа'); return; }
+        try {
+            const res = await fetch(`${API_URL}/api/register`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ name, username, password })
+            });
+            const data = await res.json();
+            if(data.success) {
+                showTab('login');
+                document.getElementById('loginUsername').value = username;
+                showError('Регистрация успешна! Войдите.', 'success');
+            } else { showError(data.error); }
+        } catch(e) { showError('Ошибка сервера'); }
+    }
+
+    function showError(msg, type='error') {
+        const el = document.getElementById('errorMsg');
+        el.innerText = msg;
+        el.style.color = type === 'success' ? '#4dba87' : '#e05c65';
+        setTimeout(() => el.innerText = '', 3000);
+    }
+
+    async function loadUsers() {
+        const res = await fetch(`${API_URL}/api/users`);
+        allUsers = await res.json();
+        renderChatList();
+    }
+
+    function renderChatList() {
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = allUsers.filter(u => u.id !== currentUser?.id && (u.name.toLowerCase().includes(search) || u.username.toLowerCase().includes(search)));
+        const chatList = document.getElementById('chatList');
+        if(filtered.length === 0) { chatList.innerHTML = '<div style="padding:20px;text-align:center;color:#aaa">Нет пользователей</div>'; return; }
+        chatList.innerHTML = filtered.map(u => `
+            <div class="chat-item" onclick="openChat('${u.id}')">
+                <div class="avatar">${u.name[0]}</div>
+                <div><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></div>
+            </div>
+        `).join('');
+    }
+
+    window.openChat = async function(userId) {
+        currentChatId = userId;
+        const user = allUsers.find(u => u.id === userId);
+        document.getElementById('chatName').innerText = user?.name || 'Чат';
+        document.getElementById('chatAvatar').innerText = user?.name[0] || '?';
+        document.getElementById('emptyChat').style.display = 'none';
+        document.getElementById('chatView').style.display = 'flex';
+        document.getElementById('chatHeader').style.display = 'flex';
+        await loadMessages();
+    };
+
+    async function loadMessages() {
+        if(!currentChatId) return;
+        const res = await fetch(`${API_URL}/api/messages/${currentChatId}?currentUserId=${currentUser.id}`);
+        const msgs = await res.json();
+        const container = document.getElementById('messages');
+        if(msgs.length === 0) { container.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">Напишите первое сообщение</div>'; return; }
+        container.innerHTML = msgs.map(msg => {
+            const isOut = msg.fromUserId === currentUser.id;
+            return `
+                <div class="message ${isOut ? 'out' : 'in'}">
+                    <div class="msg-bubble">
+                        ${escapeHtml(msg.text || msg.type)}
+                        <div style="font-size:10px;color:#aaa;margin-top:4px">${new Date(msg.ts).toLocaleTimeString()}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('msgInput');
+        const text = input.value.trim();
+        if(!text || !currentChatId) return;
+        await fetch(`${API_URL}/api/messages`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ from: currentUser.id, to: currentChatId, type: 'text', text })
+        });
+        input.value = '';
+        loadMessages();
+    }
+
+    function logout() { currentUser = null; location.reload(); }
+
+    function startPolling() {
+        setInterval(() => { if(currentChatId) loadMessages(); loadUsers(); }, 3000);
+    }
+
+    document.getElementById('searchInput').addEventListener('input', renderChatList);
+    document.getElementById('msgInput').addEventListener('keypress', (e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+    function escapeHtml(str) { return String(str||'').replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+</script>
+</body>
+</html>
