@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,34 +13,47 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// ============ ПЕРСИСТЕНТНОЕ ХРАНИЛИЩЕ ============
-// Render сохранит папку /data между деплоями
-const DATA_DIR = process.env.RENDER ? '/data' : '.';
-const DB_PATH = path.join(DATA_DIR, 'tg_clone.db');
-
-console.log(`📁 База данных: ${DB_PATH}`);
-
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database(DB_PATH);
-// ... остальной код сервера без изменений ...
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
-const path = require('path');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.static('public'));
-
+// ============ SQLite ============
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('tg_clone.db');
 
+// Функция сохранения в GitHub
+function backupToGitHub() {
+    if (!process.env.GITHUB_TOKEN) {
+        console.log('⚠️ Нет GITHUB_TOKEN, бэкап не работает');
+        return;
+    }
+    
+    console.log('💾 Сохраняем базу данных в GitHub...');
+    
+    exec(`cd /opt/render/project/src && 
+          git config user.name "Render Backup" && 
+          git config user.email "backup@render.com" &&
+          git add tg_clone.db &&
+          git commit -m "Auto-backup: ${new Date().toISOString()}" || echo "Нет изменений" &&
+          git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`,
+        (error, stdout, stderr) => {
+            if (error) {
+                console.log('❌ Бэкап не удался:', error.message);
+            } else {
+                console.log('✅ Бэкап сохранён в GitHub');
+            }
+        });
+}
+
+// Авто-бэкап каждые 5 минут
+setInterval(backupToGitHub, 300000);
+
+// При запуске восстановить базу из GitHub
+function restoreFromGitHub() {
+    exec(`cd /opt/render/project/src && git pull origin main`, (error) => {
+        if (error) console.log('Не удалось восстановить базу');
+        else console.log('✅ База восстановлена из GitHub');
+    });
+}
+
+// Создание таблиц
 db.serialize(() => {
-    // Пользователи
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -53,7 +67,6 @@ db.serialize(() => {
         createdAt INTEGER
     )`);
     
-    // Личные чаты (диалоги)
     db.run(`CREATE TABLE IF NOT EXISTS dialogs (
         id TEXT PRIMARY KEY,
         user1 TEXT,
@@ -63,7 +76,6 @@ db.serialize(() => {
         updatedAt INTEGER
     )`);
     
-    // Сообщения
     db.run(`CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         dialogId TEXT,
@@ -75,7 +87,16 @@ db.serialize(() => {
         read INTEGER DEFAULT 0
     )`);
     
-    // Подарки (NFT)
+    db.run(`CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        fromUserId TEXT,
+        againstUserId TEXT,
+        reason TEXT,
+        comment TEXT,
+        status TEXT,
+        ts INTEGER
+    )`);
+    
     db.run(`CREATE TABLE IF NOT EXISTS gifts (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -87,23 +108,13 @@ db.serialize(() => {
         rarity TEXT
     )`);
     
-    // Жалобы
-    db.run(`CREATE TABLE IF NOT EXISTS reports (
-        id TEXT PRIMARY KEY,
-        fromUserId TEXT,
-        againstUserId TEXT,
-        reason TEXT,
-        comment TEXT,
-        status TEXT,
-        ts INTEGER
-    )`);
-    
-    // Дефолтный админ
+    // Проверяем, нужен ли админ
     db.get("SELECT COUNT(*) as count FROM users WHERE username = 'admin'", (err, row) => {
         if (row && row.count === 0) {
             const hash = bcrypt.hashSync('admin2024', 10);
             db.run(`INSERT INTO users (id, name, username, password, stars, createdAt, banned, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 ['admin', 'Администратор', 'admin', hash, 999999, Date.now(), 0, 0]);
+            console.log('✅ Админ создан');
         }
     });
     
@@ -119,9 +130,13 @@ db.serialize(() => {
             const stmt = db.prepare("INSERT INTO gifts VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             gifts.forEach(g => stmt.run(g));
             stmt.finalize();
+            console.log('✅ Подарки добавлены');
         }
     });
 });
+
+// Восстанавливаем базу при старте
+setTimeout(restoreFromGitHub, 2000);
 
 // ============ СТРАНИЦЫ ============
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'messenger.html')));
@@ -141,6 +156,7 @@ app.post('/api/register', async (req, res) => {
             [username, name, username, hashed, 100, Date.now(), 0, 0],
             (err) => {
                 if (err) return res.status(500).json({ error: 'Ошибка' });
+                backupToGitHub();
                 res.json({ success: true, user: { id: username, name, username, stars: 100 } });
             });
     });
@@ -194,6 +210,7 @@ app.put('/api/users/:id', (req, res) => {
     if (bio !== undefined) db.run("UPDATE users SET bio = ? WHERE id = ?", [bio, id]);
     if (avatar !== undefined) db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatar, id]);
     
+    backupToGitHub();
     res.json({ success: true });
 });
 
@@ -205,7 +222,7 @@ app.post('/api/dialogs', (req, res) => {
     db.get("SELECT * FROM dialogs WHERE id = ?", [dialogId], (err, existing) => {
         if (!existing) {
             db.run(`INSERT INTO dialogs (id, user1, user2, updatedAt) VALUES (?, ?, ?, ?)`,
-                [dialogId, user1, user2, Date.now()]);
+                [dialogId, user1, user2, Date.now()], () => backupToGitHub());
         }
         res.json({ success: true, dialogId });
     });
@@ -224,7 +241,6 @@ app.post('/api/messages', (req, res) => {
     const dialogId = [from, to].sort().join('_');
     const messageId = uuidv4();
     
-    // Обновляем диалог
     db.run(`INSERT OR REPLACE INTO dialogs (id, user1, user2, lastMessage, lastMessageTime, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
         [dialogId, from, to, text || '[медиа]', Date.now(), Date.now()]);
     
@@ -232,6 +248,7 @@ app.post('/api/messages', (req, res) => {
         [messageId, dialogId, from, to, type, text, Date.now(), 0],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
+            backupToGitHub();
             res.json({ success: true });
         });
 });
@@ -267,12 +284,12 @@ app.post('/api/gifts/buy', async (req, res) => {
             db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - gift.price, userId]);
             db.run("UPDATE gifts SET stock = ? WHERE id = ?", [gift.stock - 1, giftId]);
             
-            // Отправляем сообщение о подарке
             const dialogId = [userId, toUserId].sort().join('_');
             const messageId = uuidv4();
             db.run(`INSERT INTO messages (id, dialogId, fromUserId, toUserId, type, text, ts, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [messageId, dialogId, userId, toUserId, 'gift', `Подарок: ${gift.name} ${gift.emoji}`, Date.now(), 0]);
             
+            backupToGitHub();
             res.json({ success: true, stars: user.stars - gift.price });
         });
     });
@@ -293,6 +310,7 @@ app.post('/api/reports', (req, res) => {
         [reportId, from, against, reason, comment || '', 'pending', Date.now()],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
+            backupToGitHub();
             res.json({ success: true });
         });
 });
@@ -312,6 +330,7 @@ app.put('/api/reports/:id', (req, res) => {
                 if (report) db.run("UPDATE users SET muted = 1 WHERE id = ?", [report.againstUserId]);
             });
         }
+        backupToGitHub();
         res.json({ success: true });
     });
 });
@@ -342,11 +361,12 @@ app.post('/api/admin/reset', (req, res) => {
     db.run("DELETE FROM messages");
     db.run("DELETE FROM dialogs");
     db.run("DELETE FROM reports");
+    backupToGitHub();
     res.json({ success: true });
 });
 
+// ============ ЗАПУСК ============
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`📱 Мессенджер: http://localhost:${PORT}/`);
-    console.log(`🛡️ Админка: http://localhost:${PORT}/admin.html`);
+    console.log(`📁 Режим: авто-бэкап в GitHub ${process.env.GITHUB_TOKEN ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
 });
