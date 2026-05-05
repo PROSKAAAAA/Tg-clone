@@ -3,7 +3,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,7 +15,7 @@ const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('tg_clone.db');
 
 db.serialize(() => {
-    // ========== ПОЛЬЗОВАТЕЛИ ==========
+    // Пользователи
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -25,45 +24,46 @@ db.serialize(() => {
         avatar TEXT,
         bio TEXT,
         stars INTEGER DEFAULT 100,
-        tags TEXT,
         muted INTEGER DEFAULT 0,
         banned INTEGER DEFAULT 0,
         createdAt INTEGER
     )`);
     
-    // ========== КАНАЛЫ И ГРУППЫ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS chats (
+    // Личные чаты (диалоги)
+    db.run(`CREATE TABLE IF NOT EXISTS dialogs (
         id TEXT PRIMARY KEY,
-        type TEXT,
-        title TEXT,
-        avatar TEXT,
-        description TEXT,
-        creatorId TEXT,
-        members TEXT,
-        createdAt INTEGER
+        user1 TEXT,
+        user2 TEXT,
+        lastMessage TEXT,
+        lastMessageTime INTEGER,
+        updatedAt INTEGER
     )`);
     
-    // ========== СООБЩЕНИЯ ==========
+    // Сообщения
     db.run(`CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
-        chatId TEXT,
+        dialogId TEXT,
         fromUserId TEXT,
+        toUserId TEXT,
         type TEXT,
         text TEXT,
-        data TEXT,
-        fileName TEXT,
-        ts INTEGER
+        ts INTEGER,
+        read INTEGER DEFAULT 0
     )`);
     
-    // ========== ПОДПИСКИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS subscriptions (
-        userId TEXT,
-        chatId TEXT,
-        role TEXT,
-        joinedAt INTEGER
+    // Подарки (NFT)
+    db.run(`CREATE TABLE IF NOT EXISTS gifts (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        emoji TEXT,
+        type TEXT,
+        price INTEGER,
+        stock INTEGER,
+        fileUrl TEXT,
+        rarity TEXT
     )`);
     
-    // ========== ЖАЛОБЫ ==========
+    // Жалобы
     db.run(`CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
         fromUserId TEXT,
@@ -74,12 +74,27 @@ db.serialize(() => {
         ts INTEGER
     )`);
     
-    // ========== АДМИН (ТОЛЬКО ЕСЛИ НЕТ ПОЛЬЗОВАТЕЛЕЙ) ==========
-    db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
+    // Дефолтный админ
+    db.get("SELECT COUNT(*) as count FROM users WHERE username = 'admin'", (err, row) => {
         if (row && row.count === 0) {
             const hash = bcrypt.hashSync('admin2024', 10);
             db.run(`INSERT INTO users (id, name, username, password, stars, createdAt, banned, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 ['admin', 'Администратор', 'admin', hash, 999999, Date.now(), 0, 0]);
+        }
+    });
+    
+    // Дефолтные подарки
+    db.get("SELECT COUNT(*) as count FROM gifts", (err, row) => {
+        if (row && row.count === 0) {
+            const gifts = [
+                ['g1', 'Сердечко', '❤️', 'emoji', 50, 100, '', 'common'],
+                ['g2', 'Корона', '👑', 'emoji', 200, 50, '', 'rare'],
+                ['g3', 'Звезда', '⭐', 'emoji', 100, 200, '', 'common'],
+                ['g4', 'Алмаз', '💎', 'tgs', 500, 20, '', 'legendary']
+            ];
+            const stmt = db.prepare("INSERT INTO gifts VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            gifts.forEach(g => stmt.run(g));
+            stmt.finalize();
         }
     });
 });
@@ -132,7 +147,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.get('/api/users', (req, res) => {
-    db.all("SELECT id, name, username, avatar, stars, banned, muted, bio FROM users", (err, users) => {
+    db.all("SELECT id, name, username, avatar, stars, muted, banned, bio FROM users", (err, users) => {
         res.json(users || []);
     });
 });
@@ -158,92 +173,85 @@ app.put('/api/users/:id', (req, res) => {
     res.json({ success: true });
 });
 
-// ============ ЛИЧНЫЕ СООБЩЕНИЯ ============
+// ============ ДИАЛОГИ ============
+app.post('/api/dialogs', (req, res) => {
+    const { user1, user2 } = req.body;
+    const dialogId = [user1, user2].sort().join('_');
+    
+    db.get("SELECT * FROM dialogs WHERE id = ?", [dialogId], (err, existing) => {
+        if (!existing) {
+            db.run(`INSERT INTO dialogs (id, user1, user2, updatedAt) VALUES (?, ?, ?, ?)`,
+                [dialogId, user1, user2, Date.now()]);
+        }
+        res.json({ success: true, dialogId });
+    });
+});
+
+app.get('/api/dialogs/:userId', (req, res) => {
+    const userId = req.params.userId;
+    db.all(`SELECT * FROM dialogs WHERE user1 = ? OR user2 = ? ORDER BY updatedAt DESC`, [userId, userId], (err, dialogs) => {
+        res.json(dialogs || []);
+    });
+});
+
+// ============ СООБЩЕНИЯ ============
+app.post('/api/messages', (req, res) => {
+    const { from, to, type, text } = req.body;
+    const dialogId = [from, to].sort().join('_');
+    const messageId = uuidv4();
+    
+    // Обновляем диалог
+    db.run(`INSERT OR REPLACE INTO dialogs (id, user1, user2, lastMessage, lastMessageTime, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
+        [dialogId, from, to, text || '[медиа]', Date.now(), Date.now()]);
+    
+    db.run(`INSERT INTO messages (id, dialogId, fromUserId, toUserId, type, text, ts, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [messageId, dialogId, from, to, type, text, Date.now(), 0],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+});
+
 app.get('/api/messages/:userId', (req, res) => {
     const { userId } = req.params;
     const currentUserId = req.query.currentUserId;
-    const chatId = [currentUserId, userId].sort().join('_');
+    const dialogId = [currentUserId, userId].sort().join('_');
     
-    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [chatId], (err, messages) => {
+    db.all("SELECT * FROM messages WHERE dialogId = ? ORDER BY ts ASC", [dialogId], (err, messages) => {
         res.json(messages || []);
     });
 });
 
-app.post('/api/messages', (req, res) => {
-    const { from, to, type, text } = req.body;
-    const chatId = [from, to].sort().join('_');
-    const messageId = uuidv4();
-    
-    db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-        [messageId, chatId, from, type, text, Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
-});
-
-// ============ КАНАЛЫ И ГРУППЫ ============
-app.post('/api/chats', (req, res) => {
-    const { type, title, description, creatorId } = req.body;
-    const chatId = uuidv4();
-    
-    db.run(`INSERT INTO chats (id, type, title, description, creatorId, members, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [chatId, type, title, description, creatorId, JSON.stringify([]), Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, chatId });
-        });
-});
-
-app.get('/api/chats', (req, res) => {
-    db.all("SELECT * FROM chats ORDER BY createdAt DESC", (err, chats) => {
-        res.json(chats || []);
+// ============ ПОДАРКИ ============
+app.get('/api/gifts', (req, res) => {
+    db.all("SELECT * FROM gifts", (err, gifts) => {
+        res.json(gifts || []);
     });
 });
 
-app.get('/api/chats/:id', (req, res) => {
-    db.get("SELECT * FROM chats WHERE id = ?", [req.params.id], (err, chat) => {
-        if (!chat) return res.status(404).json({ error: 'Не найден' });
-        res.json(chat);
-    });
-});
-
-app.post('/api/chats/:id/join', (req, res) => {
-    const { id } = req.params;
-    const { userId } = req.body;
+app.post('/api/gifts/buy', async (req, res) => {
+    const { userId, giftId, toUserId } = req.body;
     
-    db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
-        if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+    db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
+        if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
         
-        let members = [];
-        try { members = JSON.parse(chat.members); } catch(e) {}
-        if (!members.includes(userId)) {
-            members.push(userId);
-            db.run("UPDATE chats SET members = ? WHERE id = ?", [JSON.stringify(members), id]);
-            db.run("INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)", [userId, id, 'member', Date.now()]);
-        }
-        res.json({ success: true });
-    });
-});
-
-app.get('/api/chats/:id/messages', (req, res) => {
-    const { id } = req.params;
-    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [id], (err, messages) => {
-        res.json(messages || []);
-    });
-});
-
-app.post('/api/chats/:id/messages', (req, res) => {
-    const { id } = req.params;
-    const { fromUserId, type, text } = req.body;
-    const messageId = uuidv4();
-    
-    db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-        [messageId, id, fromUserId, type, text, Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
+        db.get("SELECT * FROM gifts WHERE id = ?", [giftId], (err, gift) => {
+            if (!gift) return res.status(404).json({ error: 'Подарок не найден' });
+            if (user.stars < gift.price) return res.status(400).json({ error: 'Недостаточно звёзд' });
+            if (gift.stock <= 0) return res.status(400).json({ error: 'Подарок закончился' });
+            
+            db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - gift.price, userId]);
+            db.run("UPDATE gifts SET stock = ? WHERE id = ?", [gift.stock - 1, giftId]);
+            
+            // Отправляем сообщение о подарке
+            const dialogId = [userId, toUserId].sort().join('_');
+            const messageId = uuidv4();
+            db.run(`INSERT INTO messages (id, dialogId, fromUserId, toUserId, type, text, ts, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [messageId, dialogId, userId, toUserId, 'gift', `Подарок: ${gift.name} ${gift.emoji}`, Date.now(), 0]);
+            
+            res.json({ success: true, stars: user.stars - gift.price });
         });
+    });
 });
 
 // ============ ЖАЛОБЫ ============
@@ -291,15 +299,12 @@ app.get('/api/stats', (req, res) => {
             db.get("SELECT COUNT(*) as count FROM reports", (err, reports) => {
                 db.get("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'", (err, pending) => {
                     db.get("SELECT COUNT(*) as count FROM users WHERE banned = 1", (err, banned) => {
-                        db.get("SELECT COUNT(*) as count FROM chats", (err, chats) => {
-                            res.json({
-                                users: users?.count || 0,
-                                messages: messages?.count || 0,
-                                reports: reports?.count || 0,
-                                pendingReports: pending?.count || 0,
-                                bannedUsers: banned?.count || 0,
-                                chats: chats?.count || 0
-                            });
+                        res.json({
+                            users: users?.count || 0,
+                            messages: messages?.count || 0,
+                            reports: reports?.count || 0,
+                            pendingReports: pending?.count || 0,
+                            bannedUsers: banned?.count || 0
                         });
                     });
                 });
@@ -309,14 +314,15 @@ app.get('/api/stats', (req, res) => {
 });
 
 app.post('/api/admin/reset', (req, res) => {
-    db.run("DELETE FROM users");
+    db.run("DELETE FROM users WHERE username != 'admin'");
     db.run("DELETE FROM messages");
+    db.run("DELETE FROM dialogs");
     db.run("DELETE FROM reports");
-    db.run("DELETE FROM chats");
-    db.run("DELETE FROM subscriptions");
     res.json({ success: true });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
+    console.log(`📱 Мессенджер: http://localhost:${PORT}/`);
+    console.log(`🛡️ Админка: http://localhost:${PORT}/admin.html`);
 });
