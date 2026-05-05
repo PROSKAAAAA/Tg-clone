@@ -322,4 +322,192 @@
         
         chatList.innerHTML = filtered.map(chat => `
             <div class="chat-item" onclick="openChat('${chat.id}')">
-                <div class="chat-avatar">${chat.avatar}</
+                <div class="chat-avatar">${chat.avatar}</div>
+                <div class="chat-info">
+                    <div class="chat-name">${escapeHtml(chat.name)}</div>
+                    <div class="chat-preview">${escapeHtml(chat.lastMessage || 'Напишите сообщение...')}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    window.openChat = async function(userId) {
+        currentChatUser = allUsers.find(u => u.id === userId);
+        if(!currentChatUser) return;
+        
+        // Создаём диалог если нет
+        await fetch(`${API_URL}/api/dialogs`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ user1: currentUser.id, user2: userId })
+        });
+        
+        document.getElementById('chatName').textContent = currentChatUser.name;
+        document.getElementById('chatAvatar').textContent = currentChatUser.name[0];
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('chatView').style.display = 'flex';
+        document.getElementById('chatHeader').style.display = 'flex';
+        document.getElementById('chatInfo').onclick = () => openUserProfile(currentChatUser.id);
+        await loadMessages();
+    };
+    
+    async function loadMessages() {
+        if(!currentChatUser) return;
+        const res = await fetch(`${API_URL}/api/messages/${currentChatUser.id}?currentUserId=${currentUser.id}`);
+        const msgs = await res.json();
+        const container = document.getElementById('messages');
+        if(msgs.length === 0) { container.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px">Напишите первое сообщение</div>'; return; }
+        container.innerHTML = msgs.map(msg => {
+            const isOut = msg.fromUserId === currentUser.id;
+            return `
+                <div class="message ${isOut ? 'out' : 'in'}">
+                    <div class="msg-bubble">
+                        ${msg.type === 'gift' ? `🎁 ${escapeHtml(msg.text)}` : escapeHtml(msg.text)}
+                        <div class="msg-meta">${new Date(msg.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    async function sendMessage() {
+        const input = document.getElementById('msgInput');
+        const text = input.value.trim();
+        if(!text || !currentChatUser) return;
+        await fetch(`${API_URL}/api/messages`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ from: currentUser.id, to: currentChatUser.id, type: 'text', text })
+        });
+        input.value = '';
+        await loadMessages();
+        await loadData();
+    }
+    
+    // ============ PROFILE ============
+    async function openMyProfile() {
+        const body = document.getElementById('profileBody');
+        body.innerHTML = `
+            <div style="text-align:center;margin-bottom:20px">
+                <div style="width:80px;height:80px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px">${currentUser.name[0]}</div>
+                <div style="font-size:20px;font-weight:600">${escapeHtml(currentUser.name)}</div>
+                <div style="color:#aaa">@${escapeHtml(currentUser.username)}</div>
+                <div style="margin-top:8px;color:#f5a623">⭐ ${currentUser.stars}</div>
+                ${currentUser.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(currentUser.bio)}</div>` : ''}
+            </div>
+            <button onclick="editMyProfile()" style="width:100%">✏️ Редактировать</button>
+        `;
+        openModal('profileModal');
+    }
+    
+    window.openUserProfile = async function(userId) {
+        const res = await fetch(`${API_URL}/api/users/${userId}`);
+        const user = await res.json();
+        const body = document.getElementById('profileBody');
+        body.innerHTML = `
+            <div style="text-align:center;margin-bottom:20px">
+                <div style="width:80px;height:80px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px">${user.name[0]}</div>
+                <div style="font-size:20px;font-weight:600">${escapeHtml(user.name)}</div>
+                <div style="color:#aaa">@${escapeHtml(user.username)}</div>
+                <div style="margin-top:8px;color:#f5a623">⭐ ${user.stars}</div>
+                ${user.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(user.bio)}</div>` : ''}
+            </div>
+            <button onclick="closeModal('profileModal')" style="width:100%">Закрыть</button>
+        `;
+        openModal('profileModal');
+    };
+    
+    function editMyProfile() {
+        const newName = prompt('Новое имя', currentUser.name);
+        const newBio = prompt('О себе', currentUser.bio || '');
+        if(newName) {
+            fetch(`${API_URL}/api/users/${currentUser.id}`, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ name: newName, bio: newBio })
+            }).then(() => {
+                currentUser.name = newName;
+                currentUser.bio = newBio;
+                updateUserUI();
+                showToast('Профиль обновлён');
+                closeModal('profileModal');
+                loadData();
+            });
+        }
+    }
+    
+    // ============ GIFTS ============
+    async function openGifts() {
+        const res = await fetch(`${API_URL}/api/gifts`);
+        const gifts = await res.json();
+        const body = document.getElementById('giftsBody');
+        body.innerHTML = `
+            <div style="margin-bottom:12px;text-align:center">⭐ Ваш баланс: ${currentUser.stars}</div>
+            ${gifts.map(g => `
+                <div class="gift-card" onclick="buyGift('${g.id}', '${currentChatUser ? currentChatUser.id : ''}')">
+                    <div><span style="font-size:28px">${g.emoji}</span> ${g.name}</div>
+                    <div>⭐ ${g.price}</div>
+                </div>
+            `).join('')}
+            ${!currentChatUser ? '<div style="color:#aaa;text-align:center;margin-top:12px">Сначала выберите чат, чтобы отправить подарок</div>' : ''}
+        `;
+        openModal('giftsModal');
+    }
+    
+    window.buyGift = async function(giftId, toUserId) {
+        if(!toUserId) { showToast('Сначала выберите чат'); closeModal('giftsModal'); return; }
+        const res = await fetch(`${API_URL}/api/gifts/buy`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ userId: currentUser.id, giftId, toUserId })
+        });
+        const data = await res.json();
+        if(data.success) {
+            currentUser.stars = data.stars;
+            updateUserUI();
+            showToast('Подарок отправлен!');
+            closeModal('giftsModal');
+            await loadMessages();
+            await loadData();
+        } else { showToast(data.error); }
+    };
+    
+    // ============ NEW CHAT ============
+    async function searchUsers() {
+        const query = document.getElementById('newChatSearch').value.toLowerCase();
+        if(query.length < 2) { document.getElementById('searchUsersResult').innerHTML = ''; return; }
+        const users = allUsers.filter(u => u.id !== currentUser.id && (u.name.toLowerCase().includes(query) || u.username.toLowerCase().includes(query)));
+        document.getElementById('searchUsersResult').innerHTML = users.map(u => `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:#232e3c;border-radius:12px;margin-bottom:8px;cursor:pointer" onclick="startNewChat('${u.id}')">
+                <div style="width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center">${u.name[0]}</div>
+                <div><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></div>
+            </div>
+        `).join('') || '<div style="color:#aaa;padding:12px">Ничего не найдено</div>';
+    }
+    
+    window.startNewChat = async function(userId) {
+        await fetch(`${API_URL}/api/dialogs`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ user1: currentUser.id, user2: userId })
+        });
+        closeModal('newChatModal');
+        await loadData();
+        openChat(userId);
+    };
+    
+    // ============ MENU ============
+    function openDrawer() { document.getElementById('drawer').classList.add('open'); document.getElementById('drawerOverlay').style.display = 'block'; }
+    function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerOverlay').style.display = 'none'; }
+    
+    // ============ UTILS ============
+    function logout() { currentUser = null; if(pollInterval) clearInterval(pollInterval); location.reload(); }
+    function startPolling() { pollInterval = setInterval(() => { if(currentChatUser) loadMessages(); loadData(); }, 3000); }
+    function openModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function escapeHtml(str) { return String(str||'').replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+    
+    window.closeModal = closeModal;
+    window.openUserProfile = openUserProfile;
+    window.openGifts = openGifts;
+    window.buyGift = buyGift;
+    window.startNewChat = startNewChat;
+</script>
+</body>
+</html>
