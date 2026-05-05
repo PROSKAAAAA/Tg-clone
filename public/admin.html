@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TG Admin Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Inter',sans-serif;background:#0a0e17;color:#fff}
+        .admin-wrapper{display:flex;min-height:100vh}
+        .sidebar{width:260px;background:#0f1520;border-right:1px solid #1e2d45;padding:20px 0;position:fixed;height:100vh}
+        .sidebar-brand{padding:0 20px 20px;border-bottom:1px solid #1e2d45;margin-bottom:20px}
+        .sidebar-brand h2{font-size:18px;color:#00d4ff}
+        .nav-item{padding:12px 20px;cursor:pointer;color:#7a9ab8}
+        .nav-item:hover{background:#1a2538;color:#fff}
+        .nav-item.active{background:#1c2640;color:#00d4ff;border-left:3px solid #00d4ff}
+        .main-content{flex:1;margin-left:260px;padding:20px}
+        .top-bar{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;padding:12px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+        .card{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;margin-bottom:20px}
+        .card-header{padding:16px 20px;border-bottom:1px solid #1e2d45;display:flex;justify-content:space-between;align-items:center}
+        .card-body{padding:20px}
+        table{width:100%;border-collapse:collapse}
+        th,td{padding:12px;text-align:left;border-bottom:1px solid #1e2d45}
+        input,select{width:100%;background:#0a0e17;border:1px solid #1e2d45;border-radius:8px;padding:10px;color:#fff}
+        button{background:#00d4ff;border:none;border-radius:8px;padding:10px 16px;color:#000;font-weight:600;cursor:pointer}
+        .btn-danger{background:#ff4757;color:#fff}
+        .btn-sm{padding:6px 12px;font-size:12px}
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px}
+        .stat-card{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;padding:16px}
+        .stat-value{font-size:28px;font-weight:700}
+        .stat-label{font-size:12px;color:#7a9ab8}
+        .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}
+        .modal.active{display:flex}
+        .modal-content{background:#0f1520;border:1px solid #1e2d45;border-radius:16px;width:500px;max-width:90vw}
+        .modal-header{padding:16px 20px;border-bottom:1px solid #1e2d45;display:flex;justify-content:space-between}
+        .modal-body{padding:20px}
+        .modal-footer{padding:16px 20px;border-top:1px solid #1e2d45;display:flex;justify-content:flex-end;gap:10px}
+        .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2640;border:1px solid #00d4ff;border-radius:8px;padding:10px 20px;z-index:1100;display:none}
+        .global-banner{background:#2b5278;padding:8px 16px;text-align:center;font-size:13px;cursor:pointer}
+    </style>
+</head>
+<body>
+
+<div class="admin-wrapper">
+    <div class="sidebar">
+        <div class="sidebar-brand"><h2>🛡️ TG ADMIN</h2></div>
+        <div class="nav-item active" onclick="showSection('dashboard')">📊 Dashboard</div>
+        <div class="nav-item" onclick="showSection('users')">👥 Пользователи</div>
+        <div class="nav-item" onclick="showSection('reports')">🚨 Жалобы</div>
+        <div class="nav-item" onclick="showSection('gifts')">🎁 NFT-подарки</div>
+        <div class="nav-item" onclick="showSection('messages')">💬 Сообщения</div>
+        <div class="nav-item" onclick="showSection('settings')">⚙️ Настройки</div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <h1 id="pageTitle">Dashboard</h1>
+            <button class="btn-danger btn-sm" onclick="logout()">Выйти</button>
+        </div>
+        <div id="content"></div>
+    </div>
+</div>
+
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header"><h3 id="modalTitle">Заголовок</h3><button onclick="closeModal()">✕</button></div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-footer"><button onclick="closeModal()">Отмена</button><button id="modalConfirmBtn">Сохранить</button></div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    const API_URL = '';
+    let currentSection = 'dashboard';
+
+    function checkAuth() {
+        const admin = localStorage.getItem('tg_admin');
+        if (!admin) {
+            const pwd = prompt('Введите пароль:');
+            if (pwd === 'admin2024') { localStorage.setItem('tg_admin', 'true'); loadDashboard(); }
+            else { alert('Неверно'); document.body.innerHTML = '<div style="padding:40px;text-align:center;">🔒 Доступ закрыт</div>'; }
+        } else { loadDashboard(); }
+    }
+
+    function logout() { localStorage.removeItem('tg_admin'); location.reload(); }
+
+    function showSection(section) {
+        currentSection = section;
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        document.querySelector(`.nav-item[onclick="showSection('${section}')"]`).classList.add('active');
+        const titles = { dashboard:'Dashboard', users:'Пользователи', reports:'Жалобы', gifts:'NFT-подарки', messages:'Сообщения', settings:'Настройки' };
+        document.getElementById('pageTitle').innerHTML = titles[section];
+        if (section === 'dashboard') loadDashboard();
+        else if (section === 'users') loadUsers();
+        else if (section === 'reports') loadReports();
+        else if (section === 'gifts') loadGifts();
+        else if (section === 'messages') loadMessages();
+        else if (section === 'settings') loadSettings();
+    }
+
+    async function loadDashboard() {
+        const res = await fetch(`${API_URL}/api/stats`);
+        const stats = await res.json();
+        document.getElementById('content').innerHTML = `
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value">${stats.users||0}</div><div class="stat-label">👥 Пользователей</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.messages||0}</div><div class="stat-label">💬 Сообщений</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.totalNFTs||0}</div><div class="stat-label">🏷️ Выпущено NFT</div></div>
+            </div>
+            <div class="card"><div class="card-header"><h3>📢 Глобальное объявление</h3><button onclick="openBannerModal()">✏️</button></div>
+            <div class="card-body"><div style="background:#0a0e17;padding:12px;border-left:3px solid #00d4ff;">${localStorage.getItem('global_banner') || 'Не установлено'}</div></div></div>
+        `;
+    }
+
+    function openBannerModal() {
+        document.getElementById('modalTitle').innerHTML = 'Глобальное объявление';
+        document.getElementById('modalBody').innerHTML = `<input id="bannerText" placeholder="Текст" value="${localStorage.getItem('global_banner')||''}"><input id="bannerLink" placeholder="Ссылка" style="margin-top:10px;" value="${localStorage.getItem('global_banner_link')||''}">`;
+        document.getElementById('modalConfirmBtn').onclick = () => {
+            localStorage.setItem('global_banner', document.getElementById('bannerText').value);
+            localStorage.setItem('global_banner_link', document.getElementById('bannerLink').value);
+            closeModal(); showToast('Объявление обновлено'); loadDashboard();
+        };
+        openModal();
+    }
+
+    async function loadUsers() {
+        const res = await fetch(`${API_URL}/api/users`);
+        const users = await res.json();
+        document.getElementById('content').innerHTML = `<div class="card"><div class="card-header"><h3>Пользователи (${users.length})</h3></div><div class="card-body"><table><thead><th>Пользователь</th><th>⭐</th><th>Статус</th><th>Действия</th></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa;">@${u.username}</span></td><td>⭐ ${u.stars||0}</td><td>${u.banned?'⛔ Бан':u.muted?'🔇 Мьют':'✅ Активен'}</td><td><button class="btn-sm" onclick="giveStars('${u.id}')">⭐+</button> <button class="btn-sm btn-danger" onclick="toggleBan('${u.id}',${!u.banned})">${u.banned?'Разбан':'Бан'}</button></td></tr>`).join('')}</tbody></table></div></div>`;
+    }
+
+    async function giveStars(id) {
+        let amount = prompt('Сколько звёзд?', '100');
+        if(!amount) return;
+        const user = await fetch(`${API_URL}/api/users/${id}`).then(r=>r.json());
+        await fetch(`${API_URL}/api/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ stars: (user.stars||0)+parseInt(amount) }) });
+        showToast(`Выдано ${amount} ⭐`); loadUsers();
+    }
+
+    async function toggleBan(id, ban) { await fetch(`${API_URL}/api/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ banned: ban }) }); loadUsers(); }
+
+    async function loadReports() {
+        const res = await fetch(`${API_URL}/api/reports`);
+        const reports = await res.json();
+        const pending = reports.filter(r=>r.status==='pending');
+        document.getElementById('content').innerHTML = `<div class="card"><div class="card-header"><h3>Жалобы (${pending.length} ожидают)</h3></div><div class="card-body">${pending.map(r=>`<div style="background:#0a0e17;border-radius:8px;padding:12px;margin-bottom:12px;"><div><strong>⚠️ ${r.reason}</strong> от @${r.fromUserId} на @${r.againstUserId}</div>${r.comment?`<div style="color:#aaa;margin-top:8px;">💬 ${escapeHtml(r.comment)}</div>`:''}<div style="margin-top:12px;"><button class="btn-sm" onclick="resolveReport('${r.id}','ban')">🚫 Бан</button> <button class="btn-sm" onclick="resolveReport('${r.id}','mute')">🔇 Мьют</button> <button class="btn-sm btn-danger" onclick="resolveReport('${r.id}','reject')">✗ Отказать</button></div></div>`).join('')||'<p style="text-align:center;color:#aaa;">Нет жалоб</p>'}</div></div>`;
+    }
+
+    async function resolveReport(id, action) {
+        let status = action==='reject'?'rejected':'resolved';
+        await fetch(`${API_URL}/api/reports/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status, action:action==='reject'?'':action }) });
+        showToast('Жалоба обработана'); loadReports(); loadDashboard();
+    }
+
+    async function loadGifts() {
+        const res = await fetch(`${API_URL}/api/nft/collections`);
+        const collections = await res.json();
+        document.getElementById('content').innerHTML = `<div class="card"><div class="card-header"><h3>🎁 NFT-коллекции</h3><button onclick="openCollectionModal()">+ Создать</button></div><div class="card-body">${collections.map(c=>`<div style="background:#0a0e17;border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;"><div><h3>${c.emoji||'🎁'} ${escapeHtml(c.name)}</h3><div>💰 ${c.price}⭐ | 📦 Выпущено: ${c.minted||0}/${c.maxSupply||'∞'}</div>${c.fileUrl?`<div style="font-size:12px;color:#00d4ff;">📎 ${c.fileUrl.substring(0,40)}</div>`:''}</div><div><button class="btn-sm" onclick="mintNFT('${c.id}')">🏷️ Минт</button> <button class="btn-sm btn-danger" onclick="deleteCollection('${c.id}')">🗑️</button></div></div><div style="margin-top:12px;"><div style="font-size:12px;color:#aaa;">Последние NFT:</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">${(c.recentMints||[]).slice(0,3).map(n=>`<span style="background:#0f1520;padding:4px 8px;border-radius:8px;font-size:11px;">#${n.serialNumber}</span>`).join('')||'Нет'}</div></div></div>`).join('')||'<p style="text-align:center;color:#aaa;">Нет коллекций</p>'}</div></div>`;
+    }
+
+    function openCollectionModal(col=null) {
+        document.getElementById('modalTitle').innerHTML = col?'Редактировать':'Создать коллекцию';
+        document.getElementById('modalBody').innerHTML = `<input id="colName" placeholder="Название" value="${col?.name||''}"><input id="colEmoji" placeholder="Эмодзи" value="${col?.emoji||'🎁'}" style="margin-top:10px;"><input id="colPrice" type="number" placeholder="Цена" value="${col?.price||100}" style="margin-top:10px;"><input id="colMaxSupply" type="number" placeholder="Макс. количество (0=безлимит)" value="${col?.maxSupply||0}" style="margin-top:10px;"><input id="colFileUrl" placeholder="Ссылка на файл (.tgs/.gif)" value="${col?.fileUrl||''}" style="margin-top:10px;">`;
+        document.getElementById('modalConfirmBtn').onclick = async () => {
+            const data = {
+                name: document.getElementById('colName').value,
+                emoji: document.getElementById('colEmoji').value,
+                price: parseInt(document.getElementById('colPrice').value),
+                maxSupply: parseInt(document.getElementById('colMaxSupply').value),
+                fileUrl: document.getElementById('colFileUrl').value,
+                type: 'tgs'
+            };
+            if(col) await fetch(`${API_URL}/api/nft/collections/${col.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+            else await fetch(`${API_URL}/api/nft/collections`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+            closeModal(); loadGifts(); showToast(col?'Обновлено':'Создано');
+        };
+        openModal();
+    }
+
+    async function mintNFT(id) {
+        const serial = prompt('Серийный номер (оставьте пустым для авто)');
+        await fetch(`${API_URL}/api/nft/mint`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ collectionId:id, serialNumber:serial||undefined }) });
+        showToast('NFT выпущен'); loadGifts();
+    }
+
+    async function deleteCollection(id) { if(confirm('Удалить коллекцию?')){ await fetch(`${API_URL}/api/nft/collections/${id}`, { method:'DELETE' }); loadGifts(); showToast('Удалено'); } }
+
+    async function loadMessages() {
+        const res = await fetch(`${API_URL}/api/messages/all`);
+        let msgs = [];
+        if(res.ok) msgs = await res.json();
+        document.getElementById('content').innerHTML = `<div class="card"><div class="card-header"><h3>Сообщения (${msgs.length})</h3></div><div class="card-body">${msgs.slice(0,50).map(m=>`<div style="padding:10px 0;border-bottom:1px solid #1e2d45;"><strong>@${escapeHtml(m.fromUserId)}</strong> → <strong>@${escapeHtml(m.toUserId)}</strong><br><span style="color:#aaa;">${escapeHtml(m.text||m.type)}</span><br><span style="font-size:11px;">${new Date(m.ts).toLocaleString()}</span></div>`).join('')||'Нет'}</div></div>`;
+    }
+
+    function loadSettings() {
+        document.getElementById('content').innerHTML = `<div class="card"><div class="card-header"><h3>⚙️ Настройки</h3></div><div class="card-body"><div style="background:#2b1a1a;border:1px solid #ff4757;border-radius:12px;padding:20px;"><h3 style="color:#ff4757;">⚠️ Опасная зона</h3><input type="text" id="resetConfirm" placeholder='Введите "RESET"' style="margin:12px 0;"><button class="btn-danger" onclick="resetDatabase()">Сбросить БД</button></div></div></div>`;
+    }
+
+    async function resetDatabase() {
+        if(document.getElementById('resetConfirm')?.value !== 'RESET') { showToast('Введите RESET'); return; }
+        await fetch(`${API_URL}/api/admin/reset`, { method:'POST' });
+        localStorage.removeItem('global_banner');
+        showToast('База сброшена'); loadDashboard();
+    }
+
+    function openModal() { document.getElementById('modal').classList.add('active'); }
+    function closeModal() { document.getElementById('modal').classList.remove('active'); }
+    function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',3000); }
+    function escapeHtml(s) { return String(s||'').replace(/[&<>]/g, m=> m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+
+    checkAuth();
+    window.showSection = showSection; window.openBannerModal = openBannerModal; window.giveStars = giveStars; window.toggleBan = toggleBan;
+    window.resolveReport = resolveReport; window.openCollectionModal = openCollectionModal; window.mintNFT = mintNFT; window.deleteCollection = deleteCollection;
+    window.resetDatabase = resetDatabase; window.closeModal = closeModal;
+</script>
+</body>
+</html>
