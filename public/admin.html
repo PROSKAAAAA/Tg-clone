@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui;background:#0a0e17;color:#fff;padding:20px}
+        .card{background:#151d2e;border-radius:12px;padding:20px;margin-bottom:20px}
+        .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+        .stat{background:#151d2e;padding:20px;border-radius:12px}
+        table{width:100%;border-collapse:collapse}
+        th,td{padding:10px;text-align:left;border-bottom:1px solid #1e2d45}
+        input,select,textarea{background:#0f1520;border:1px solid #1e2d45;padding:8px 12px;border-radius:8px;color:#fff}
+        button{background:#00d4ff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;color:#000}
+        .danger{background:#ff4757;color:#fff}
+        .report-card{background:#0f1520;border-radius:8px;padding:12px;margin-bottom:12px}
+        .login-box{max-width:400px;margin:100px auto}
+    </style>
+</head>
+<body>
+    <div id="loginDiv" class="card login-box">
+        <h2>🛡️ Admin Login</h2>
+        <input id="adminLogin" placeholder="Login" style="width:100%;margin:10px 0">
+        <input id="adminPass" type="password" placeholder="Password" style="width:100%;margin:10px 0">
+        <button onclick="adminLogin()">Войти</button>
+        <div id="loginError" style="color:#ff4757;margin-top:10px"></div>
+    </div>
+
+    <div id="adminPanel" style="display:none">
+        <div class="stats" id="stats"></div>
+        
+        <div class="card">
+            <h3>👥 Пользователи</h3>
+            <input id="userSearch" placeholder="Поиск..." style="margin:10px 0;width:100%" oninput="renderUsers()">
+            <div id="usersList"></div>
+        </div>
+        
+        <div class="card">
+            <h3>🚨 Жалобы</h3>
+            <div id="reportsList"></div>
+        </div>
+        
+        <div class="card">
+            <h3>🎁 Управление подарками</h3>
+            <button onclick="addGift()" style="margin-bottom:10px">+ Добавить подарок</button>
+            <div id="giftsList"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '';
+        
+        async function adminLogin() {
+            const login = document.getElementById('adminLogin').value;
+            const pass = document.getElementById('adminPass').value;
+            
+            // Простая проверка (в реальности - через API)
+            if (login === 'admin' && pass === 'admin2024') {
+                document.getElementById('loginDiv').style.display = 'none';
+                document.getElementById('adminPanel').style.display = 'block';
+                loadStats();
+                loadUsers();
+                loadReports();
+                loadGifts();
+            } else {
+                document.getElementById('loginError').textContent = 'Неверный логин или пароль';
+            }
+        }
+        
+        async function loadStats() {
+            const res = await fetch(`${API_URL}/api/stats`);
+            const stats = await res.json();
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">📊 Пользователей: ${stats.users}</div>
+                <div class="stat">💬 Сообщений: ${stats.messages}</div>
+                <div class="stat">🚨 Жалоб: ${stats.reports}</div>
+                <div class="stat">⏳ Ожидают: ${stats.pendingReports}</div>
+                <div class="stat">🚫 Забанено: ${stats.bannedUsers}</div>
+                <div class="stat">🎁 Подарков: ${stats.gifts}</div>
+            `;
+        }
+        
+        let allUsers = [];
+        async function loadUsers() {
+            const res = await fetch(`${API_URL}/api/users`);
+            allUsers = await res.json();
+            renderUsers();
+        }
+        
+        function renderUsers() {
+            const search = document.getElementById('userSearch')?.value.toLowerCase() || '';
+            const filtered = allUsers.filter(u => u.name.toLowerCase().includes(search) || u.username.toLowerCase().includes(search));
+            
+            document.getElementById('usersList').innerHTML = `
+                <table>
+                    <thead><tr><th>Пользователь</th><th>⭐</th><th>Статус</th><th>Действия</th></tr></thead>
+                    <tbody>
+                        ${filtered.map(u => `
+                            <tr>
+                                <td><strong>${escapeHtml(u.name)}</strong><br><small>@${u.username}</small></td>
+                                <td>⭐ ${u.stars || 0}</td>
+                                <td>${u.banned ? '⛔ Забанен' : u.muted ? '🔇 Замьючен' : '✅ Активен'}</td>
+                                <td>
+                                    <button onclick="toggleBan('${u.id}', ${!u.banned})">${u.banned ? 'Разбан' : 'Бан'}</button>
+                                    <button onclick="toggleMute('${u.id}', ${!u.muted})">${u.muted ? 'Снять мьют' : 'Мьют'}</button>
+                                    <button onclick="addStars('${u.id}')">⭐ +</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        async function toggleBan(id, ban) {
+            await fetch(`${API_URL}/api/users/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ banned: ban })
+            });
+            loadUsers();
+        }
+        
+        async function toggleMute(id, mute) {
+            await fetch(`${API_URL}/api/users/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ muted: mute })
+            });
+            loadUsers();
+        }
+        
+        async function addStars(id) {
+            const amount = prompt('Сколько звёзд выдать?', '100');
+            if (amount) {
+                const user = allUsers.find(u => u.id === id);
+                await fetch(`${API_URL}/api/users/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stars: (user.stars || 0) + parseInt(amount) })
+                });
+                loadUsers();
+            }
+        }
+        
+        async function loadReports() {
+            const res = await fetch(`${API_URL}/api/reports`);
+            const reports = await res.json();
+            document.getElementById('reportsList').innerHTML = reports.map(r => `
+                <div class="report-card">
+                    <strong>⚠️ ${r.reason}</strong> от @${r.fromUserId} на @${r.againstUserId}
+                    <p style="margin-top:8px;color:#aaa">${escapeHtml(r.comment || '')}</p>
+                    <div style="margin-top:8px">
+                        <button onclick="resolveReport('${r.id}', 'resolved', 'ban')">🚫 Бан</button>
+                        <button onclick="resolveReport('${r.id}', 'resolved', 'mute')">🔇 Мьют</button>
+                        <button onclick="resolveReport('${r.id}', 'rejected', '')">❌ Отказать</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        async function resolveReport(id, status, action) {
+            await fetch(`${API_URL}/api/reports/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, action })
+            });
+            loadReports();
+            loadStats();
+            loadUsers();
+        }
+        
+        async function loadGifts() {
+            const res = await fetch(`${API_URL}/api/gifts`);
+            const gifts = await res.json();
+            document.getElementById('giftsList').innerHTML = `
+                <table>
+                    <thead><tr><th>Подарок</th><th>Цена</th><th>Остаток</th><th>Действия</th></tr></thead>
+                    <tbody>
+                        ${gifts.map(g => `
+                            <tr>
+                                <td><span style="font-size:24px">${g.emoji}</span> ${escapeHtml(g.name)}</td>
+                                <td>⭐ ${g.price}</td>
+                                <td>${g.stock}</td>
+                                <td><button onclick="deleteGift('${g.id}')">🗑️</button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        function addGift() {
+            const name = prompt('Название подарка');
+            const emoji = prompt('Эмодзи (например, 🎁)');
+            const price = prompt('Цена в звёздах');
+            const stock = prompt('Количество');
+            
+            if (name && emoji && price && stock) {
+                fetch(`${API_URL}/api/gifts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, emoji, type: 'emoji', price: parseInt(price), stock: parseInt(stock) })
+                }).then(() => loadGifts());
+            }
+        }
+        
+        async function deleteGift(id) {
+            if (confirm('Удалить подарок?')) {
+                await fetch(`${API_URL}/api/gifts/${id}`, { method: 'DELETE' });
+                loadGifts();
+            }
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+    </script>
+</body>
+</html>
