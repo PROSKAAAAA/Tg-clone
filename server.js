@@ -31,7 +31,7 @@ if (fs.existsSync(DATA_FILE)) {
     try {
         const saved = fs.readFileSync(DATA_FILE, 'utf8');
         data = JSON.parse(saved);
-        console.log('✅ Данные загружены');
+        console.log('✅ Данные загружены из файла');
     } catch(e) { console.log('Ошибка загрузки'); }
 }
 
@@ -40,34 +40,51 @@ function saveData() {
     console.log('💾 Данные сохранены локально');
 }
 
-// ============ БЭКАП В GITHUB ============
+// ============ БЭКАП В GITHUB (ФИКС) ============
 function backupToGitHub() {
     if (!process.env.GITHUB_TOKEN) {
         console.log('⚠️ Нет GITHUB_TOKEN, бэкап не работает');
         return;
     }
     
-    console.log('💾 Сохраняем данные в GitHub...');
+    console.log('📤 Отправляем бэкап в GitHub...');
     
+    // Сначала сохраняем данные локально
+    saveData();
+    
+    // Отправляем в GitHub
     exec(`cd /opt/render/project/src && 
           git config user.name "Render Backup" && 
           git config user.email "backup@render.com" &&
           git add data.json &&
-          git commit -m "Auto-backup: ${new Date().toISOString()}" || echo "Нет изменений" &&
+          git commit -m "Backup: ${new Date().toISOString()}" || echo "Nothing to commit" &&
           git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`,
         (error, stdout, stderr) => {
             if (error) {
                 console.log('❌ Бэкап не удался:', error.message);
             } else {
                 console.log('✅ Бэкап сохранён в GitHub');
+                console.log(stdout);
             }
         });
 }
 
+// Принудительный бэкап по запросу из админки
+app.post('/api/admin/backup', (req, res) => {
+    backupToGitHub();
+    res.json({ success: true, message: 'Бэкап запущен' });
+});
+
+// Авто-бэкап каждые 5 минут
+setInterval(backupToGitHub, 300000);
+// Первый бэкап через 10 секунд после старта
+setTimeout(backupToGitHub, 10000);
+
 // Восстановление при старте
 function restoreFromGitHub() {
     if (!process.env.GITHUB_TOKEN) return;
-    exec(`cd /opt/render/project/src && git pull origin main`, (error) => {
+    console.log('📥 Восстанавливаем данные из GitHub...');
+    exec(`cd /opt/render/project/src && git pull origin main`, (error, stdout) => {
         if (!error) {
             console.log('✅ Данные восстановлены из GitHub');
             if (fs.existsSync(DATA_FILE)) {
@@ -77,13 +94,11 @@ function restoreFromGitHub() {
                     console.log('✅ Данные загружены после восстановления');
                 } catch(e) {}
             }
+        } else {
+            console.log('❌ Не удалось восстановить данные');
         }
     });
 }
-
-// Авто-бэкап каждые 5 минут
-setInterval(backupToGitHub, 300000);
-// Восстановление при запуске
 setTimeout(restoreFromGitHub, 3000);
 
 // ============ ДЕФОЛТНЫЙ АДМИН ============
@@ -170,7 +185,6 @@ app.post('/api/register', async (req, res) => {
         createdAt: Date.now()
     };
     saveData();
-    backupToGitHub();
     sendNotification(username, '🎉 Добро пожаловать!', `Вы успешно зарегистрировались!`);
     res.json({ success: true, user: { id: username, name, username, stars: 100 } });
 });
@@ -252,7 +266,6 @@ app.put('/api/users/:id', (req, res) => {
         }
     }
     saveData();
-    backupToGitHub();
     res.json({ success: true });
 });
 
