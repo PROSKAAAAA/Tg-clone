@@ -710,7 +710,7 @@
     function openReportModal() {
         if(!currentChat || currentChat.type !== 'user') { showToast('Пожаловаться можно только на пользователя'); return; }
         document.getElementById('reportBody').innerHTML = `
-            <select id="reportReason" style="margin-bottom:12px">
+            <select id="reportReason" style="margin-bottom:12px;width:100%;padding:10px;background:#0e1621;border:1px solid #293d4f;border-radius:12px;color:#fff">
                 <option value="spam">📢 Спам</option>
                 <option value="violence">⚠️ Насилие</option>
                 <option value="fake">🎭 Фейковый аккаунт</option>
