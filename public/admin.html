@@ -15,7 +15,7 @@
         .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:20px}
         .stat{background:#0f1520;padding:16px;border-radius:12px}
         .stat-value{font-size:28px;font-weight:700;color:#00d4ff}
-        input,select{background:#0a0e17;border:1px solid #1e2d45;padding:8px;border-radius:8px;color:#fff}
+        input,select,textarea{background:#0a0e17;border:1px solid #1e2d45;padding:8px;border-radius:8px;color:#fff}
         .login-box{max-width:400px;margin:100px auto}
         .tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:4px;cursor:pointer}
         .tag-verified{background:#00d4ff20;color:#00d4ff}
@@ -23,106 +23,189 @@
         .tag-fake{background:#f5a62320;color:#f5a623}
         .tag-bot{background:#a55eea20;color:#a55eea}
         .tag.selected{background:#2b88d8;color:#fff}
+        .tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+        .tab{padding:8px 16px;cursor:pointer;border-radius:20px;background:#0a0e17}
+        .tab.active{background:#00d4ff;color:#000}
+        .tab-content{display:none}
+        .tab-content.active{display:block}
     </style>
 </head>
 <body>
 <div id="loginBox" class="card login-box">
-    <h2>Admin</h2>
+    <h2>Admin Panel</h2>
     <input type="password" id="adminPass" style="margin:12px 0">
     <button onclick="adminLogin()">Войти</button>
     <div id="loginError" style="color:#ff4757"></div>
 </div>
 <div id="adminPanel" style="display:none">
     <div class="stats" id="stats"></div>
-    <div class="card"><h3>👥 Пользователи</h3><div id="usersList"></div></div>
-    <div class="card"><h3>🚨 Жалобы</h3><div id="reportsList"></div></div>
-    <div class="card"><h3>📝 Апелляции</h3><div id="appealsList"></div></div>
-    <div class="card"><h3>📢 Каналы/Группы</h3><div id="chatsList"></div></div>
+    
+    <div class="tabs">
+        <div class="tab active" onclick="showTab('users')">👥 Пользователи</div>
+        <div class="tab" onclick="showTab('reports')">🚨 Жалобы</div>
+        <div class="tab" onclick="showTab('appeals')">📝 Апелляции бота</div>
+        <div class="tab" onclick="showTab('bot')">📢 @TelegramNotifications</div>
+        <div class="tab" onclick="showTab('chats')">📢 Каналы</div>
+    </div>
+    
+    <div id="tab-users" class="tab-content active">
+        <div class="card"><h3>👥 Пользователи</h3><div id="usersList"></div></div>
+    </div>
+    
+    <div id="tab-reports" class="tab-content">
+        <div class="card"><h3>🚨 Жалобы</h3><div id="reportsList"></div></div>
+    </div>
+    
+    <div id="tab-appeals" class="tab-content">
+        <div class="card"><h3>📝 Апелляции от @SpamInfoBot</h3><div id="appealsList"></div></div>
+    </div>
+    
+    <div id="tab-bot" class="tab-content">
+        <div class="card">
+            <h3>📢 @TelegramNotifications <span style="color:#4dba87">✅ Официальный бот</span></h3>
+            <div style="margin-top:16px">
+                <select id="notifyUser" style="width:100%;margin-bottom:12px">
+                    <option value="">Выберите пользователя</option>
+                </select>
+                <input type="text" id="notifyTitle" placeholder="Заголовок уведомления" style="width:100%;margin-bottom:12px">
+                <textarea id="notifyMessage" placeholder="Текст уведомления" rows="3" style="width:100%;margin-bottom:12px"></textarea>
+                <button onclick="sendBotNotification()">📨 Отправить уведомление</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="tab-chats" class="tab-content">
+        <div class="card"><h3>📢 Каналы и группы</h3><div id="chatsList"></div></div>
+    </div>
 </div>
+
 <script>
 const API_URL = '';
+let currentAdmin = false;
+let allUsers = [];
+
 async function adminLogin() {
     if(document.getElementById('adminPass').value === 'admin2024') {
         document.getElementById('loginBox').style.display = 'none';
         document.getElementById('adminPanel').style.display = 'block';
         loadStats(); loadUsers(); loadReports(); loadAppeals(); loadChats();
+        loadUserSelect();
     } else { document.getElementById('loginError').innerText = 'Неверный пароль'; }
 }
+
+function showTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+}
+
 async function loadStats() {
     const res = await fetch(`${API_URL}/api/stats`);
     const s = await res.json();
     document.getElementById('stats').innerHTML = `
         <div class="stat"><div class="stat-value">${s.users||0}</div><div>👥</div></div>
         <div class="stat"><div class="stat-value">${s.pendingReports||0}</div><div>🚨 Жалоб</div></div>
-        <div class="stat"><div class="stat-value">${s.pendingAppeals||0}</div><div>📝 Апелляций</div></div>
         <div class="stat"><div class="stat-value">${s.spamBlockedUsers||0}</div><div>🚫 Спам-блок</div></div>
         <div class="stat"><div class="stat-value">${s.frozenUsers||0}</div><div>❄️ Заморозка</div></div>
     `;
 }
+
 async function loadUsers() {
     const res = await fetch(`${API_URL}/api/users`);
-    const users = await res.json();
+    allUsers = await res.json();
     document.getElementById('usersList').innerHTML = `
-        <table><thead><th>Пользователь</th><th>⭐</th><th>Метки</th><th>Статус</th><th>Действия</th></thead>
-        <tbody>${users.map(u => `
+        <tr><th>Пользователь</th><th>⭐</th><th>Метки</th><th>Статус</th><th>Действия</th>
+        ${allUsers.map(u => `
             <tr><td><b>${u.name}</b><br>@${u.username}</td>
             <td>⭐ ${u.stars}</td>
             <td>${['verified','scam','fake','bot'].map(t => `<span class="tag tag-${t} ${(u.tags||[]).includes(t)?'selected':''}" onclick="toggleTag('${u.id}','${t}')">${t}</span>`).join('')}</td>
             <td>${u.banned?'⛔ Бан':u.frozen?'❄️ Заморозка':u.spamBlocked?'🚫 Спам':'✅'}</td>
-            <td><button onclick="addStars('${u.id}')">⭐+</button>
-            <button onclick="toggleAction('${u.id}','banned',${!u.banned})">${u.banned?'Разбан':'Бан'}</button>
-            <button onclick="toggleAction('${u.id}','frozen',${!u.frozen})">${u.frozen?'Разморозить':'Заморозить'}</button>
-            <button onclick="spamBlock('${u.id}')">🚫 Спам</button></td></tr>
-        `).join('')}</tbody>
+            <td>
+                <button onclick="addStars('${u.id}')">⭐+</button>
+                <button onclick="toggleAction('${u.id}','banned',${!u.banned})">${u.banned?'Разбан':'Бан'}</button>
+                <button onclick="toggleAction('${u.id}','frozen',${!u.frozen})">${u.frozen?'Разморозить':'Заморозить'}</button>
+                <button onclick="spamBlock('${u.id}')">🚫 Спам</button>
+            </td>
+        `).join('')}
     `;
 }
+
 async function toggleTag(id, tag) {
-    const res = await fetch(`${API_URL}/api/users/${id}`);
-    const u = await res.json();
+    const u = allUsers.find(u => u.id === id);
     let tags = u.tags || [];
     if(tags.includes(tag)) tags = tags.filter(t => t !== tag);
     else tags.push(tag);
     await fetch(`${API_URL}/api/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ tags }) });
     loadUsers();
 }
-async function addStars(id) { let amt=prompt('Сколько?',100); if(amt){ let u=await fetch(`${API_URL}/api/users/${id}`).then(r=>r.json()); await fetch(`${API_URL}/api/users/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ stars: (u.stars||0)+parseInt(amt) }) }); loadUsers(); } }
+
+async function addStars(id) { let amt=prompt('Сколько?',100); if(amt){ let u=allUsers.find(u=>u.id===id); await fetch(`${API_URL}/api/users/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ stars: (u.stars||0)+parseInt(amt) }) }); loadUsers(); } }
 async function toggleAction(id, field, val) { await fetch(`${API_URL}/api/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ [field]: val }) }); loadUsers(); loadStats(); }
 async function spamBlock(id) { let hours=prompt('На сколько часов? (0=навсегда)','24'); if(hours!==null){ let reason=prompt('Причина:'); let until=parseInt(hours)>0?Date.now()+parseInt(hours)*3600000:null; await fetch(`${API_URL}/api/users/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ spamBlocked: true, spamReason: reason, spamUntil: until }) }); loadUsers(); loadStats(); } }
+
 async function loadReports() {
     const res = await fetch(`${API_URL}/api/reports`);
     const reports = await res.json();
     document.getElementById('reportsList').innerHTML = reports.filter(r=>r.status==='pending').map(r => `
-        <div style="border-bottom:1px solid #1e2d45;padding:12px"><b>${r.reason}</b> от @${r.fromUserId} на ${r.type==='chat'?'канал':'@'+r.againstId}<br>${r.comment||''}<br>
-        ${r.type==='chat'?`<button onclick="resolveReport('${r.id}','delete')">🗑️ Удалить канал</button>`:`<button onclick="resolveReport('${r.id}','ban')">🚫 Бан</button><button onclick="resolveReport('${r.id}','freeze')">❄️ Заморозить</button><button onclick="resolveReportWithSpam('${r.id}')">🚫 Спам</button>`}
-        <button onclick="resolveReport('${r.id}','reject')">✗ Отказать</button></div>
+        <div style="border-bottom:1px solid #1e2d45;padding:12px">
+            <b>${r.reason}</b> от @${r.fromUserId} на ${r.type==='chat'?'канал':'@'+r.againstId}<br>${r.comment||''}<br>
+            ${r.type==='chat'?`<button onclick="resolveReport('${r.id}','delete')">🗑️ Удалить канал</button>`:`<button onclick="resolveReport('${r.id}','ban')">🚫 Бан</button><button onclick="resolveReport('${r.id}','freeze')">❄️ Заморозить</button><button onclick="resolveReportWithSpam('${r.id}')">🚫 Спам</button>`}
+            <button onclick="resolveReport('${r.id}','reject')">✗ Отказать</button>
+        </div>
     `).join('') || 'Нет жалоб';
 }
-async function resolveReport(id, action) { await fetch(`${API_URL}/api/reports/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:'resolved', action }) }); loadReports(); loadStats(); loadChats(); }
+async function resolveReport(id, action) { await fetch(`${API_URL}/api/reports/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:'resolved', action }) }); loadReports(); loadStats(); loadChats(); loadUsers(); }
 async function resolveReportWithSpam(id) { let hours=prompt('Спам-блок на часов?','24'); if(hours!==null) await fetch(`${API_URL}/api/reports/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:'resolved', action:'spam', duration:parseInt(hours) }) }); loadReports(); loadStats(); loadUsers(); }
+
 async function loadAppeals() {
-    const res = await fetch(`${API_URL}/api/appeals`);
+    const res = await fetch(`${API_URL}/api/bot/appeals`);
     const appeals = await res.json();
-    document.getElementById('appealsList').innerHTML = appeals.filter(a=>a.status==='pending').map(a => `
-        <div style="border-bottom:1px solid #1e2d45;padding:12px"><b>📝 Апелляция</b> от @${a.userId}<br>${a.reason||''}<br>
-        <button onclick="resolveAppeal('${a.id}','approved')">✅ Одобрить</button>
-        <button onclick="resolveAppealWithComment('${a.id}','rejected')">❌ Отказать</button></div>
+    document.getElementById('appealsList').innerHTML = appeals.map(a => `
+        <div style="border-bottom:1px solid #1e2d45;padding:12px">
+            <b>📝 Апелляция</b> от @${a.userId}<br>
+            Причина: ${a.reason}<br>
+            <button onclick="resolveAppeal('${a.id}','approved')">✅ Одобрить (снять блок)</button>
+            <button onclick="resolveAppealWithComment('${a.id}','rejected')">❌ Отказать</button>
+        </div>
     `).join('') || 'Нет апелляций';
 }
-async function resolveAppeal(id, status) { let comment=status==='rejected'?prompt('Причина отказа:'):''; await fetch(`${API_URL}/api/appeals/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status, adminComment:comment }) }); loadAppeals(); loadStats(); loadUsers(); }
-function resolveAppealWithComment(id,status) { let comment=prompt('Причина отказа:'); if(comment) fetch(`${API_URL}/api/appeals/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status, adminComment:comment }) }).then(()=>{ loadAppeals(); loadStats(); loadUsers(); }); }
+async function resolveAppeal(id, status) { await fetch(`${API_URL}/api/bot/appeals/${id}`,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status }) }); loadAppeals(); loadUsers(); }
+function resolveAppealWithComment(id,status) { let comment=prompt('Причина отказа:'); if(comment) fetch(`${API_URL}/api/bot/appeals/${id}`,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status, adminComment:comment }) }).then(()=>{ loadAppeals(); loadUsers(); }); }
+
 async function loadChats() {
     const res = await fetch(`${API_URL}/api/chats`);
     const chats = await res.json();
     document.getElementById('chatsList').innerHTML = chats.map(c => `
         <div style="border-bottom:1px solid #1e2d45;padding:12px;display:flex;justify-content:space-between">
             <div><b>${c.type==='channel'?'📢':'👥'} ${c.title}</b><br>${c.description||''}<br>${c.isPublic?'🔓 Публичный':'🔒 Приватный'}</div>
-            <div><button onclick="toggleChatPrivacy('${c.id}',${c.isPublic?0:1})">${c.isPublic?'🔒 Сделать приватным':'🔓 Сделать публичным'}</button>
-            <button onclick="deleteChat('${c.id}')" class="btn-danger">🗑️ Удалить</button></div>
+            <div><button onclick="toggleChatPrivacy('${c.id}',${c.isPublic?0:1})">${c.isPublic?'🔒 Приватный':'🔓 Публичный'}</button>
+            <button onclick="deleteChat('${c.id}')" class="btn-danger">🗑️</button></div>
         </div>
     `).join('');
 }
 async function toggleChatPrivacy(id, isPublic) { await fetch(`${API_URL}/api/chats/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ isPublic }) }); loadChats(); }
 async function deleteChat(id) { if(confirm('Удалить?')){ await fetch(`${API_URL}/api/chats/${id}`,{ method:'DELETE' }); loadChats(); } }
+
+async function loadUserSelect() {
+    const res = await fetch(`${API_URL}/api/users`);
+    const users = await res.json();
+    document.getElementById('notifyUser').innerHTML = '<option value="">Выберите пользователя</option>' + users.map(u => `<option value="${u.id}">${u.name} (@${u.username})</option>`).join('');
+}
+
+async function sendBotNotification() {
+    const userId = document.getElementById('notifyUser').value;
+    const title = document.getElementById('notifyTitle').value;
+    const message = document.getElementById('notifyMessage').value;
+    if(!userId || !title || !message) { alert('Заполните все поля'); return; }
+    await fetch(`${API_URL}/api/admin/send-notification`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ userId, title, message })
+    });
+    alert('Уведомление отправлено от лица @TelegramNotifications');
+    document.getElementById('notifyTitle').value = '';
+    document.getElementById('notifyMessage').value = '';
+}
 </script>
 </body>
 </html>
