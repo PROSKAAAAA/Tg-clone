@@ -4,7 +4,6 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,71 +39,10 @@ function saveData() {
     console.log('💾 Данные сохранены локально');
 }
 
-// ============ БЭКАП В GITHUB (ИСПРАВЛЕННЫЙ) ============
-function backupToGitHub() {
-    if (!process.env.GITHUB_TOKEN) {
-        console.log('⚠️ Нет GITHUB_TOKEN, бэкап не работает');
-        return;
-    }
-    
-    console.log('📤 Отправляем бэкап в GitHub...');
-    
-    // Сначала сохраняем данные локально
+// Сохраняем при каждом изменении
+function autoSave() {
     saveData();
-    
-    // Команда с pull перед push
-    const cmd = `cd /opt/render/project/src && 
-          git config user.name "Render Backup" && 
-          git config user.email "backup@render.com" &&
-          git pull --rebase https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main || true &&
-          git add data.json &&
-          git commit -m "Backup: ${new Date().toISOString()}" || echo "Nothing to commit" &&
-          git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`;
-    
-    exec(cmd, (error, stdout, stderr) => {
-        if (error) {
-            console.log('❌ Бэкап не удался:', error.message);
-            console.log('stderr:', stderr);
-        } else {
-            console.log('✅ Бэкап сохранён в GitHub');
-            console.log(stdout);
-        }
-    });
 }
-
-// Принудительный бэкап по запросу из админки
-app.post('/api/admin/backup', (req, res) => {
-    backupToGitHub();
-    res.json({ success: true, message: 'Бэкап запущен' });
-});
-
-// Авто-бэкап каждые 5 минут
-setInterval(backupToGitHub, 300000);
-// Первый бэкап через 10 секунд после старта
-setTimeout(backupToGitHub, 10000);
-
-// Восстановление при старте
-function restoreFromGitHub() {
-    if (!process.env.GITHUB_TOKEN) return;
-    console.log('📥 Восстанавливаем данные из GitHub...');
-    const cmd = `cd /opt/render/project/src && 
-          git pull https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`;
-    exec(cmd, (error, stdout) => {
-        if (!error) {
-            console.log('✅ Данные восстановлены из GitHub');
-            if (fs.existsSync(DATA_FILE)) {
-                try {
-                    const saved = fs.readFileSync(DATA_FILE, 'utf8');
-                    data = JSON.parse(saved);
-                    console.log('✅ Данные загружены после восстановления');
-                } catch(e) {}
-            }
-        } else {
-            console.log('❌ Не удалось восстановить данные');
-        }
-    });
-}
-setTimeout(restoreFromGitHub, 3000);
 
 // ============ ДЕФОЛТНЫЙ АДМИН ============
 if (!data.users['admin']) {
@@ -115,25 +53,6 @@ if (!data.users['admin']) {
         password: bcrypt.hashSync('admin2024', 10),
         stars: 999999,
         tags: ['verified'],
-        banned: false,
-        frozen: false,
-        spamBlocked: false,
-        spamReason: null,
-        spamUntil: null,
-        createdAt: Date.now()
-    };
-    saveData();
-}
-
-// Дефолтный пользователь для теста
-if (!data.users['user']) {
-    data.users['user'] = {
-        id: 'user',
-        name: 'Test User',
-        username: 'user',
-        password: bcrypt.hashSync('1234', 10),
-        stars: 100,
-        tags: [],
         banned: false,
         frozen: false,
         spamBlocked: false,
@@ -480,5 +399,6 @@ app.get('/api/stats', (req, res) => {
 // ============ ЗАПУСК ============
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`💾 Данные сохраняются в data.json и GitHub`);
+    console.log(`💾 Данные сохраняются в data.json`);
+    console.log(`📁 Файл данных: ${DATA_FILE}`);
 });
