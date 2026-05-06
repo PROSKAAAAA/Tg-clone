@@ -40,7 +40,7 @@ function saveData() {
     console.log('💾 Данные сохранены локально');
 }
 
-// ============ БЭКАП В GITHUB (ФИКС) ============
+// ============ БЭКАП В GITHUB (ИСПРАВЛЕННЫЙ) ============
 function backupToGitHub() {
     if (!process.env.GITHUB_TOKEN) {
         console.log('⚠️ Нет GITHUB_TOKEN, бэкап не работает');
@@ -52,21 +52,24 @@ function backupToGitHub() {
     // Сначала сохраняем данные локально
     saveData();
     
-    // Отправляем в GitHub
-    exec(`cd /opt/render/project/src && 
+    // Команда с pull перед push
+    const cmd = `cd /opt/render/project/src && 
           git config user.name "Render Backup" && 
           git config user.email "backup@render.com" &&
+          git pull --rebase https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main || true &&
           git add data.json &&
           git commit -m "Backup: ${new Date().toISOString()}" || echo "Nothing to commit" &&
-          git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`,
-        (error, stdout, stderr) => {
-            if (error) {
-                console.log('❌ Бэкап не удался:', error.message);
-            } else {
-                console.log('✅ Бэкап сохранён в GitHub');
-                console.log(stdout);
-            }
-        });
+          git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`;
+    
+    exec(cmd, (error, stdout, stderr) => {
+        if (error) {
+            console.log('❌ Бэкап не удался:', error.message);
+            console.log('stderr:', stderr);
+        } else {
+            console.log('✅ Бэкап сохранён в GitHub');
+            console.log(stdout);
+        }
+    });
 }
 
 // Принудительный бэкап по запросу из админки
@@ -84,7 +87,9 @@ setTimeout(backupToGitHub, 10000);
 function restoreFromGitHub() {
     if (!process.env.GITHUB_TOKEN) return;
     console.log('📥 Восстанавливаем данные из GitHub...');
-    exec(`cd /opt/render/project/src && git pull origin main`, (error, stdout) => {
+    const cmd = `cd /opt/render/project/src && 
+          git pull https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`;
+    exec(cmd, (error, stdout) => {
         if (!error) {
             console.log('✅ Данные восстановлены из GitHub');
             if (fs.existsSync(DATA_FILE)) {
@@ -110,6 +115,25 @@ if (!data.users['admin']) {
         password: bcrypt.hashSync('admin2024', 10),
         stars: 999999,
         tags: ['verified'],
+        banned: false,
+        frozen: false,
+        spamBlocked: false,
+        spamReason: null,
+        spamUntil: null,
+        createdAt: Date.now()
+    };
+    saveData();
+}
+
+// Дефолтный пользователь для теста
+if (!data.users['user']) {
+    data.users['user'] = {
+        id: 'user',
+        name: 'Test User',
+        username: 'user',
+        password: bcrypt.hashSync('1234', 10),
+        stars: 100,
+        tags: [],
         banned: false,
         frozen: false,
         spamBlocked: false,
