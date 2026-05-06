@@ -17,43 +17,28 @@ app.use(express.static('public'));
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('tg_clone.db');
 
-// Функция сохранения в GitHub
+// GitHub бэкап (как ты просил)
 function backupToGitHub() {
-    if (!process.env.GITHUB_TOKEN) {
-        console.log('⚠️ Нет GITHUB_TOKEN, бэкап не работает');
-        return;
-    }
-    
-    console.log('💾 Сохраняем базу данных в GitHub...');
-    
+    if (!process.env.GITHUB_TOKEN) return;
     exec(`cd /opt/render/project/src && 
           git config user.name "Render Backup" && 
           git config user.email "backup@render.com" &&
           git add tg_clone.db &&
           git commit -m "Auto-backup: ${new Date().toISOString()}" || echo "Нет изменений" &&
           git push https://${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPO}.git main`,
-        (error, stdout, stderr) => {
-            if (error) {
-                console.log('❌ Бэкап не удался:', error.message);
-            } else {
-                console.log('✅ Бэкап сохранён в GitHub');
-            }
-        });
+        (error) => { if (error) console.log('Бэкап не удался'); else console.log('✅ Бэкап сохранён'); });
 }
-
-// Авто-бэкап каждые 5 минут
 setInterval(backupToGitHub, 300000);
 
-// При запуске восстановить базу из GitHub
 function restoreFromGitHub() {
     exec(`cd /opt/render/project/src && git pull origin main`, (error) => {
-        if (error) console.log('Не удалось восстановить базу');
-        else console.log('✅ База восстановлена из GitHub');
+        if (!error) console.log('✅ База восстановлена');
     });
 }
 
-// Создание таблиц
+// ============ СОЗДАНИЕ ТАБЛИЦ ============
 db.serialize(() => {
+    // Пользователи
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -67,6 +52,19 @@ db.serialize(() => {
         createdAt INTEGER
     )`);
     
+    // Каналы и группы
+    db.run(`CREATE TABLE IF NOT EXISTS chats (
+        id TEXT PRIMARY KEY,
+        type TEXT,
+        title TEXT,
+        avatar TEXT,
+        description TEXT,
+        creatorId TEXT,
+        members TEXT,
+        createdAt INTEGER
+    )`);
+    
+    // Личные диалоги
     db.run(`CREATE TABLE IF NOT EXISTS dialogs (
         id TEXT PRIMARY KEY,
         user1 TEXT,
@@ -76,17 +74,28 @@ db.serialize(() => {
         updatedAt INTEGER
     )`);
     
+    // Сообщения (везде)
     db.run(`CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
-        dialogId TEXT,
+        chatId TEXT,
         fromUserId TEXT,
-        toUserId TEXT,
         type TEXT,
         text TEXT,
+        data TEXT,
+        fileName TEXT,
         ts INTEGER,
         read INTEGER DEFAULT 0
     )`);
     
+    // Подписки на каналы/группы
+    db.run(`CREATE TABLE IF NOT EXISTS subscriptions (
+        userId TEXT,
+        chatId TEXT,
+        role TEXT,
+        joinedAt INTEGER
+    )`);
+    
+    // Жалобы
     db.run(`CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
         fromUserId TEXT,
@@ -97,6 +106,7 @@ db.serialize(() => {
         ts INTEGER
     )`);
     
+    // Подарки (обычные)
     db.run(`CREATE TABLE IF NOT EXISTS gifts (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -108,13 +118,50 @@ db.serialize(() => {
         rarity TEXT
     )`);
     
-    // Проверяем, нужен ли админ
+    // NFT-подарки (с серийными номерами)
+    db.run(`CREATE TABLE IF NOT EXISTS nft_collections (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        emoji TEXT,
+        type TEXT,
+        price INTEGER,
+        maxSupply INTEGER,
+        fileUrl TEXT,
+        rarity TEXT,
+        minted INTEGER DEFAULT 0
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS nft_items (
+        id TEXT PRIMARY KEY,
+        collectionId TEXT,
+        serialNumber TEXT,
+        ownerId TEXT,
+        mintedAt INTEGER
+    )`);
+    
+    // Улучшения (лутбоксы)
+    db.run(`CREATE TABLE IF NOT EXISTS upgrades (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        price INTEGER,
+        chance INTEGER,
+        modelUrl TEXT
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS upgrade_rewards (
+        id TEXT PRIMARY KEY,
+        upgradeId TEXT,
+        type TEXT,
+        value TEXT,
+        probability INTEGER
+    )`);
+    
+    // Дефолтный админ
     db.get("SELECT COUNT(*) as count FROM users WHERE username = 'admin'", (err, row) => {
         if (row && row.count === 0) {
             const hash = bcrypt.hashSync('admin2024', 10);
             db.run(`INSERT INTO users (id, name, username, password, stars, createdAt, banned, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 ['admin', 'Администратор', 'admin', hash, 999999, Date.now(), 0, 0]);
-            console.log('✅ Админ создан');
         }
     });
     
@@ -130,12 +177,22 @@ db.serialize(() => {
             const stmt = db.prepare("INSERT INTO gifts VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             gifts.forEach(g => stmt.run(g));
             stmt.finalize();
-            console.log('✅ Подарки добавлены');
+        }
+    });
+    
+    // Дефолтные улучшения
+    db.get("SELECT COUNT(*) as count FROM upgrades", (err, row) => {
+        if (row && row.count === 0) {
+            db.run(`INSERT INTO upgrades (id, name, price, chance, modelUrl) VALUES ('up1', 'Космический сундук', 150, 100, '')`);
+            db.run(`INSERT INTO upgrade_rewards (id, upgradeId, type, value, probability) VALUES 
+                ('ur1', 'up1', 'color', '#FFD700', 30),
+                ('ur2', 'up1', 'color', '#FF6B35', 25),
+                ('ur3', 'up1', 'background', 'stars', 20),
+                ('ur4', 'up1', 'gift', 'g1', 25)`);
         }
     });
 });
 
-// Восстанавливаем базу при старте
 setTimeout(restoreFromGitHub, 2000);
 
 // ============ СТРАНИЦЫ ============
@@ -214,7 +271,7 @@ app.put('/api/users/:id', (req, res) => {
     res.json({ success: true });
 });
 
-// ============ ДИАЛОГИ ============
+// ============ ЛИЧНЫЕ ДИАЛОГИ ============
 app.post('/api/dialogs', (req, res) => {
     const { user1, user2 } = req.body;
     const dialogId = [user1, user2].sort().join('_');
@@ -235,7 +292,7 @@ app.get('/api/dialogs/:userId', (req, res) => {
     });
 });
 
-// ============ СООБЩЕНИЯ ============
+// ============ ЛИЧНЫЕ СООБЩЕНИЯ ============
 app.post('/api/messages', (req, res) => {
     const { from, to, type, text } = req.body;
     const dialogId = [from, to].sort().join('_');
@@ -244,8 +301,8 @@ app.post('/api/messages', (req, res) => {
     db.run(`INSERT OR REPLACE INTO dialogs (id, user1, user2, lastMessage, lastMessageTime, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
         [dialogId, from, to, text || '[медиа]', Date.now(), Date.now()]);
     
-    db.run(`INSERT INTO messages (id, dialogId, fromUserId, toUserId, type, text, ts, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [messageId, dialogId, from, to, type, text, Date.now(), 0],
+    db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+        [messageId, dialogId, from, type, text, Date.now()],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
             backupToGitHub();
@@ -258,19 +315,98 @@ app.get('/api/messages/:userId', (req, res) => {
     const currentUserId = req.query.currentUserId;
     const dialogId = [currentUserId, userId].sort().join('_');
     
-    db.all("SELECT * FROM messages WHERE dialogId = ? ORDER BY ts ASC", [dialogId], (err, messages) => {
+    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [dialogId], (err, messages) => {
         res.json(messages || []);
     });
 });
 
-// ============ ПОДАРКИ ============
+// ============ КАНАЛЫ И ГРУППЫ ============
+app.post('/api/chats', (req, res) => {
+    const { type, title, description, creatorId, avatar } = req.body;
+    const chatId = uuidv4();
+    
+    db.run(`INSERT INTO chats (id, type, title, description, creatorId, members, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [chatId, type, title, description, creatorId, JSON.stringify([creatorId]), Date.now()],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            db.run(`INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)`, [creatorId, chatId, 'creator', Date.now()]);
+            backupToGitHub();
+            res.json({ success: true, chatId });
+        });
+});
+
+app.get('/api/chats', (req, res) => {
+    db.all("SELECT * FROM chats ORDER BY createdAt DESC", (err, chats) => {
+        res.json(chats || []);
+    });
+});
+
+app.get('/api/chats/:id', (req, res) => {
+    db.get("SELECT * FROM chats WHERE id = ?", [req.params.id], (err, chat) => {
+        if (!chat) return res.status(404).json({ error: 'Не найден' });
+        res.json(chat);
+    });
+});
+
+app.post('/api/chats/:id/join', (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
+        if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+        
+        let members = [];
+        try { members = JSON.parse(chat.members); } catch(e) {}
+        if (!members.includes(userId)) {
+            members.push(userId);
+            db.run("UPDATE chats SET members = ? WHERE id = ?", [JSON.stringify(members), id]);
+            db.run("INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)", [userId, id, 'member', Date.now()]);
+            backupToGitHub();
+        }
+        res.json({ success: true });
+    });
+});
+
+app.get('/api/chats/:id/messages', (req, res) => {
+    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [req.params.id], (err, messages) => {
+        res.json(messages || []);
+    });
+});
+
+app.post('/api/chats/:id/messages', (req, res) => {
+    const { id } = req.params;
+    const { fromUserId, type, text } = req.body;
+    const messageId = uuidv4();
+    
+    db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+        [messageId, id, fromUserId, type, text, Date.now()],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            backupToGitHub();
+            res.json({ success: true });
+        });
+});
+
+app.get('/api/my/chats/:userId', (req, res) => {
+    const userId = req.params.userId;
+    db.all("SELECT * FROM subscriptions WHERE userId = ?", [userId], (err, subs) => {
+        const chatIds = subs.map(s => s.chatId);
+        if (chatIds.length === 0) return res.json([]);
+        const placeholders = chatIds.map(() => '?').join(',');
+        db.all(`SELECT * FROM chats WHERE id IN (${placeholders})`, chatIds, (err, chats) => {
+            res.json(chats || []);
+        });
+    });
+});
+
+// ============ ПОДАРКИ (ОБЫЧНЫЕ) ============
 app.get('/api/gifts', (req, res) => {
     db.all("SELECT * FROM gifts", (err, gifts) => {
         res.json(gifts || []);
     });
 });
 
-app.post('/api/gifts/buy', async (req, res) => {
+app.post('/api/gifts/buy', (req, res) => {
     const { userId, giftId, toUserId } = req.body;
     
     db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
@@ -286,11 +422,139 @@ app.post('/api/gifts/buy', async (req, res) => {
             
             const dialogId = [userId, toUserId].sort().join('_');
             const messageId = uuidv4();
-            db.run(`INSERT INTO messages (id, dialogId, fromUserId, toUserId, type, text, ts, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [messageId, dialogId, userId, toUserId, 'gift', `Подарок: ${gift.name} ${gift.emoji}`, Date.now(), 0]);
+            db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+                [messageId, dialogId, userId, 'gift', `Подарок: ${gift.name} ${gift.emoji}`, Date.now()]);
             
             backupToGitHub();
             res.json({ success: true, stars: user.stars - gift.price });
+        });
+    });
+});
+
+app.post('/api/gifts', (req, res) => {
+    const { name, emoji, type, price, stock, fileUrl, rarity } = req.body;
+    const giftId = 'g' + Date.now();
+    
+    db.run(`INSERT INTO gifts (id, name, emoji, type, price, stock, fileUrl, rarity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [giftId, name, emoji, type, price, stock, fileUrl || '', rarity || 'common'],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            backupToGitHub();
+            res.json({ success: true });
+        });
+});
+
+app.delete('/api/gifts/:id', (req, res) => {
+    db.run("DELETE FROM gifts WHERE id = ?", [req.params.id], (err) => {
+        backupToGitHub();
+        res.json({ success: true });
+    });
+});
+
+// ============ NFT-КОЛЛЕКЦИИ ============
+app.get('/api/nft/collections', (req, res) => {
+    db.all("SELECT * FROM nft_collections", (err, collections) => {
+        res.json(collections || []);
+    });
+});
+
+app.post('/api/nft/collections', (req, res) => {
+    const { name, emoji, type, price, maxSupply, fileUrl, rarity } = req.body;
+    const id = 'nft' + Date.now();
+    
+    db.run(`INSERT INTO nft_collections (id, name, emoji, type, price, maxSupply, fileUrl, rarity, minted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, name, emoji, type, price, maxSupply || 0, fileUrl || '', rarity || 'common', 0],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            backupToGitHub();
+            res.json({ success: true });
+        });
+});
+
+app.delete('/api/nft/collections/:id', (req, res) => {
+    db.run("DELETE FROM nft_collections WHERE id = ?", [req.params.id], (err) => {
+        db.run("DELETE FROM nft_items WHERE collectionId = ?", [req.params.id]);
+        backupToGitHub();
+        res.json({ success: true });
+    });
+});
+
+app.post('/api/nft/mint', (req, res) => {
+    const { collectionId, ownerId } = req.body;
+    
+    db.get("SELECT * FROM nft_collections WHERE id = ?", [collectionId], (err, collection) => {
+        if (!collection) return res.status(404).json({ error: 'Коллекция не найдена' });
+        if (collection.maxSupply > 0 && collection.minted >= collection.maxSupply) {
+            return res.status(400).json({ error: 'Лимит коллекции исчерпан' });
+        }
+        
+        const serialNumber = `${collectionId.slice(-4)}-${String(collection.minted + 1).padStart(4, '0')}`;
+        const itemId = uuidv4();
+        
+        db.run(`INSERT INTO nft_items (id, collectionId, serialNumber, ownerId, mintedAt) VALUES (?, ?, ?, ?, ?)`,
+            [itemId, collectionId, serialNumber, ownerId || null, Date.now()]);
+        db.run("UPDATE nft_collections SET minted = minted + 1 WHERE id = ?", [collectionId]);
+        
+        backupToGitHub();
+        res.json({ success: true, serialNumber });
+    });
+});
+
+app.get('/api/nft/user/:userId', (req, res) => {
+    db.all(`SELECT n.*, c.name as collectionName, c.emoji FROM nft_items n 
+            JOIN nft_collections c ON n.collectionId = c.id 
+            WHERE n.ownerId = ?`, [req.params.userId], (err, items) => {
+        res.json(items || []);
+    });
+});
+
+// ============ УЛУЧШЕНИЯ (ЛУТБОКСЫ) ============
+app.get('/api/upgrades', (req, res) => {
+    db.all("SELECT * FROM upgrades", (err, upgrades) => {
+        if (err) return res.json([]);
+        Promise.all(upgrades.map(u => {
+            return new Promise((resolve) => {
+                db.all("SELECT * FROM upgrade_rewards WHERE upgradeId = ?", [u.id], (err, rewards) => {
+                    u.rewards = rewards || [];
+                    resolve(u);
+                });
+            });
+        })).then(result => res.json(result));
+    });
+});
+
+app.post('/api/upgrades/open', (req, res) => {
+    const { userId, upgradeId } = req.body;
+    
+    db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
+        if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+        
+        db.get("SELECT * FROM upgrades WHERE id = ?", [upgradeId], (err, upgrade) => {
+            if (!upgrade) return res.status(404).json({ error: 'Улучшение не найдено' });
+            if (user.stars < upgrade.price) return res.status(400).json({ error: 'Недостаточно звёзд' });
+            
+            db.all("SELECT * FROM upgrade_rewards WHERE upgradeId = ?", [upgradeId], (err, rewards) => {
+                if (!rewards.length) return res.status(400).json({ error: 'Нет наград' });
+                
+                // Рандомная награда по шансам
+                let totalChance = rewards.reduce((sum, r) => sum + r.probability, 0);
+                let random = Math.random() * totalChance;
+                let selected = rewards[0];
+                let accum = 0;
+                for (let r of rewards) {
+                    accum += r.probability;
+                    if (random <= accum) { selected = r; break; }
+                }
+                
+                let rewardText = '';
+                if (selected.type === 'color') rewardText = `🎨 Цвет: ${selected.value}`;
+                else if (selected.type === 'background') rewardText = `🖼️ Фон: ${selected.value}`;
+                else if (selected.type === 'gift') rewardText = `🎁 Подарок!`;
+                
+                db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - upgrade.price, userId]);
+                backupToGitHub();
+                res.json({ success: true, reward: rewardText, stars: user.stars - upgrade.price });
+            });
         });
     });
 });
@@ -342,12 +606,21 @@ app.get('/api/stats', (req, res) => {
             db.get("SELECT COUNT(*) as count FROM reports", (err, reports) => {
                 db.get("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'", (err, pending) => {
                     db.get("SELECT COUNT(*) as count FROM users WHERE banned = 1", (err, banned) => {
-                        res.json({
-                            users: users?.count || 0,
-                            messages: messages?.count || 0,
-                            reports: reports?.count || 0,
-                            pendingReports: pending?.count || 0,
-                            bannedUsers: banned?.count || 0
+                        db.get("SELECT COUNT(*) as count FROM chats", (err, chats) => {
+                            db.get("SELECT COUNT(*) as count FROM nft_collections", (err, nftCollections) => {
+                                db.get("SELECT COUNT(*) as count FROM gifts", (err, gifts) => {
+                                    res.json({
+                                        users: users?.count || 0,
+                                        messages: messages?.count || 0,
+                                        reports: reports?.count || 0,
+                                        pendingReports: pending?.count || 0,
+                                        bannedUsers: banned?.count || 0,
+                                        chats: chats?.count || 0,
+                                        nftCollections: nftCollections?.count || 0,
+                                        gifts: gifts?.count || 0
+                                    });
+                                });
+                            });
                         });
                     });
                 });
@@ -360,7 +633,11 @@ app.post('/api/admin/reset', (req, res) => {
     db.run("DELETE FROM users WHERE username != 'admin'");
     db.run("DELETE FROM messages");
     db.run("DELETE FROM dialogs");
+    db.run("DELETE FROM chats");
+    db.run("DELETE FROM subscriptions");
     db.run("DELETE FROM reports");
+    db.run("DELETE FROM nft_items");
+    db.run("DELETE FROM nft_collections");
     backupToGitHub();
     res.json({ success: true });
 });
@@ -368,5 +645,6 @@ app.post('/api/admin/reset', (req, res) => {
 // ============ ЗАПУСК ============
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`📁 Режим: авто-бэкап в GitHub ${process.env.GITHUB_TOKEN ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
+    console.log(`📱 Мессенджер: https://tg-clone-zjsn.onrender.com`);
+    console.log(`🛡️ Админка: https://tg-clone-zjsn.onrender.com/admin.html`);
 });
