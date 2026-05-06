@@ -12,7 +12,7 @@
         .auth-box{background:#17212b;border-radius:28px;padding:40px;width:400px}
         .auth-box h2{text-align:center;margin-bottom:24px}
         .auth-tabs{display:flex;gap:10px;margin-bottom:20px}
-        .auth-tabs button{flex:1;background:#232e3c;padding:12px;border-radius:12px;border:none;color:#fff}
+        .auth-tabs button{flex:1;background:#232e3c;padding:12px;border-radius:12px;border:none;color:#fff;cursor:pointer}
         .auth-tabs button.active{background:#2b88d8}
         input{width:100%;padding:12px;margin-bottom:12px;border-radius:12px;border:none;background:#0e1621;color:#fff}
         button{background:#2b88d8;border:none;padding:12px;border-radius:12px;color:#fff;cursor:pointer}
@@ -22,11 +22,22 @@
         .main{flex:1;display:flex;flex-direction:column}
         
         .header{padding:12px 16px;border-bottom:1px solid #293d4f;display:flex;align-items:center;gap:12px}
-        .avatar{width:48px;height:48px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:20px}
-        .avatar-small{width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:18px}
-        .bot-avatar{background:#a55eea}
-        .verified-badge{position:relative}
-        .verified-badge::after{content:"✅";position:absolute;bottom:-2px;right:-2px;font-size:12px;background:#0e1621;border-radius:50%}
+        .avatar{width:48px;height:48px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:20px;position:relative}
+        .avatar-small{width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative}
+        .frozen-avatar{background:#6c7883;filter:grayscale(0.5)}
+        .frozen-avatar::after{content:"👻";position:absolute;bottom:-5px;right:-5px;font-size:16px;background:#17212b;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+        .banned-avatar{background:#4a4a4a;filter:grayscale(1)}
+        .banned-avatar::after{content:"🕊️";position:absolute;bottom:-5px;right:-5px;font-size:14px;background:#17212b;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+        
+        /* Метки рядом с ником */
+        .name-with-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+        .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:10px;cursor:help;position:relative}
+        .badge-verified{background:#2b88d820;color:#2b88d8;border:1px solid #2b88d840}
+        .badge-scam{background:#ff475720;color:#ff4757;border:1px solid #ff475740}
+        .badge-fake{background:#f5a62320;color:#f5a623;border:1px solid #f5a62340}
+        .badge-bot{background:#a55eea20;color:#a55eea;border:1px solid #a55eea40}
+        .badge::after{content:attr(data-tooltip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#0e1621;color:#fff;padding:4px 8px;border-radius:8px;font-size:11px;white-space:nowrap;display:none;z-index:100;margin-bottom:4px}
+        .badge:hover::after{display:block}
         
         .search{padding:8px 16px}
         .search input{width:100%;background:#232e3c;border:none;border-radius:22px;padding:10px 16px}
@@ -64,14 +75,16 @@
         .notification.unread{background:#2b88d8}
         
         .error{color:#e05c65;margin-top:12px;text-align:center}
-        .tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:4px;background:#2b88d820;color:#2b88d8}
-        .badge-verified{background:#2b88d820;color:#2b88d8}
-        
         .bot-message{background:#232e3c;border-radius:12px;padding:12px;margin-bottom:8px}
         .bot-response{background:#0e1621;padding:10px;border-radius:10px;margin-top:6px;white-space:pre-wrap}
+        
+        .admin-banner{background:#2b5278;padding:8px 16px;text-align:center;font-size:13px;cursor:pointer;display:none}
     </style>
 </head>
 <body>
+
+<!-- АДМИН БАННЕР -->
+<div id="adminBanner" class="admin-banner"></div>
 
 <!-- АВТОРИЗАЦИЯ -->
 <div id="authScreen" class="auth">
@@ -100,7 +113,7 @@
 <div id="app" class="app" style="display:none">
     <div class="sidebar">
         <div class="header">
-            <div class="avatar-small verified-badge" id="myAvatar" onclick="openDrawer()">👤</div>
+            <div class="avatar-small" id="myAvatar" onclick="openDrawer()">👤</div>
             <div style="flex:1">
                 <div id="myName"></div>
                 <div id="myStars" style="font-size:12px;color:#f5a623"></div>
@@ -117,8 +130,8 @@
         <div class="header" id="chatHeader" style="display:none">
             <div class="avatar-small" id="chatAvatar"></div>
             <div style="flex:1;cursor:pointer" onclick="openProfile(currentChatId)">
-                <div id="chatName"></div>
-                <div id="chatTags" style="font-size:11px"></div>
+                <div class="name-with-tags" id="chatNameContainer"></div>
+                <div id="chatStatus" style="font-size:11px;color:#aaa"></div>
             </div>
             <button onclick="openReport()" style="width:40px;height:40px;border-radius:50%;background:#232e3c">🚨</button>
         </div>
@@ -139,7 +152,7 @@
 <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
     <div style="text-align:center;margin-bottom:20px">
-        <div class="avatar-small verified-badge" style="width:80px;height:80px;margin:0 auto 12px;font-size:32px" id="drawerAvatar">👤</div>
+        <div class="avatar-small" style="width:80px;height:80px;margin:0 auto 12px;font-size:32px" id="drawerAvatar">👤</div>
         <div id="drawerName"></div>
         <div id="drawerStars" style="color:#f5a623"></div>
     </div>
@@ -159,7 +172,7 @@
     </div>
 </div>
 
-<!-- МОДАЛ УВЕДОМЛЕНИЙ (TelegramNotifications) -->
+<!-- МОДАЛ УВЕДОМЛЕНИЙ -->
 <div id="notificationsModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -170,7 +183,7 @@
     </div>
 </div>
 
-<!-- МОДАЛ СПАМ ИНФО БОТА -->
+<!-- МОДАЛ СПАМ БОТА -->
 <div id="spamBotModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -229,6 +242,61 @@ let currentChatId = null;
 let allUsers = [];
 let dialogs = [];
 let myChats = [];
+let pollInterval = null;
+let adminBannerInterval = null;
+
+// Сохраняем сессию
+function saveSession() {
+    if(currentUser) localStorage.setItem('tg_user', JSON.stringify({ id: currentUser.id, name: currentUser.name, username: currentUser.username }));
+}
+function loadSession() {
+    const saved = localStorage.getItem('tg_user');
+    if(saved) {
+        try {
+            const u = JSON.parse(saved);
+            autoLogin(u.id);
+        } catch(e) {}
+    }
+}
+
+async function autoLogin(userId) {
+    try {
+        const res = await fetch(`${API_URL}/api/users/${userId}`);
+        const user = await res.json();
+        if(user && !user.banned) {
+            currentUser = user;
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            updateUI();
+            await loadData();
+            startPolling();
+            checkSpamStatus();
+            loadNotifications();
+            loadAdminBanner();
+        } else {
+            document.getElementById('authScreen').style.display = 'flex';
+            document.getElementById('app').style.display = 'none';
+        }
+    } catch(e) {
+        document.getElementById('authScreen').style.display = 'flex';
+    }
+}
+
+async function loadAdminBanner() {
+    const bannerText = localStorage.getItem('global_banner');
+    const bannerLink = localStorage.getItem('global_banner_link');
+    const bannerDiv = document.getElementById('adminBanner');
+    if(bannerText && bannerText.trim()) {
+        bannerDiv.style.display = 'block';
+        if(bannerLink) bannerDiv.innerHTML = `<a href="${bannerLink}" target="_blank" style="color:#fff;text-decoration:none">📢 ${bannerText}</a>`;
+        else bannerDiv.innerHTML = `📢 ${bannerText}`;
+        bannerDiv.onclick = () => { if(bannerLink) window.open(bannerLink, '_blank'); };
+    } else {
+        bannerDiv.style.display = 'none';
+    }
+    if(adminBannerInterval) clearInterval(adminBannerInterval);
+    adminBannerInterval = setInterval(loadAdminBanner, 30000);
+}
 
 // ============ АВТОРИЗАЦИЯ ============
 document.getElementById('loginBtn').onclick = () => {
@@ -256,6 +324,7 @@ async function doLogin() {
         const data = await res.json();
         if(data.success) {
             currentUser = data.user;
+            saveSession();
             document.getElementById('authScreen').style.display = 'none';
             document.getElementById('app').style.display = 'flex';
             updateUI();
@@ -263,6 +332,7 @@ async function doLogin() {
             startPolling();
             checkSpamStatus();
             loadNotifications();
+            loadAdminBanner();
         } else { showError(data.error); }
     } catch(e) { showError('Ошибка сервера'); }
 }
@@ -300,6 +370,41 @@ function updateUI() {
     document.getElementById('drawerStars').innerHTML = `⭐ ${currentUser.stars}`;
     document.getElementById('myAvatar').innerHTML = currentUser.name[0];
     document.getElementById('drawerAvatar').innerHTML = currentUser.name[0];
+    // Обновляем аватар в текущем чате если открыт
+    if(currentChatId && !currentChatId.startsWith('chat_')) {
+        const user = allUsers.find(u => u.id === currentChatId);
+        if(user) updateChatHeader(user);
+    }
+}
+
+function getUserDisplay(user) {
+    if(user.frozen) return { name: '❄️ Замороженный аккаунт', avatar: '👻', avatarClass: 'frozen-avatar', isFrozen: true };
+    if(user.banned) return { name: '🗑️ Удалённый аккаунт', avatar: '🕊️', avatarClass: 'banned-avatar', isBanned: true };
+    return { name: user.name, avatar: user.avatar || user.name[0], avatarClass: '', isFrozen: false, isBanned: false };
+}
+
+function getBadgesHtml(user) {
+    if(!user || user.banned || user.frozen) return '';
+    return (user.tags || []).map(t => {
+        let tooltip = '';
+        if(t === 'verified') tooltip = 'Верифицированный аккаунт';
+        else if(t === 'scam') tooltip = 'Мошеннический аккаунт';
+        else if(t === 'fake') tooltip = 'Фейковый аккаунт';
+        else if(t === 'bot') tooltip = 'Бот';
+        else tooltip = t;
+        return `<span class="badge badge-${t}" data-tooltip="${tooltip}">${t === 'verified' ? '✓' : (t === 'scam' ? '⚠️' : (t === 'fake' ? '🎭' : (t === 'bot' ? '🤖' : '🏷️')))}</span>`;
+    }).join('');
+}
+
+function updateChatHeader(user) {
+    const display = getUserDisplay(user);
+    const avatarEl = document.getElementById('chatAvatar');
+    avatarEl.innerHTML = display.avatar;
+    avatarEl.className = `avatar-small ${display.avatarClass}`;
+    document.getElementById('chatNameContainer').innerHTML = `<strong>${escapeHtml(display.name)}</strong> ${getBadgesHtml(user)}`;
+    if(user.frozen) document.getElementById('chatStatus').innerHTML = '❄️ Аккаунт заморожен';
+    else if(user.banned) document.getElementById('chatStatus').innerHTML = '🗑️ Аккаунт удалён';
+    else document.getElementById('chatStatus').innerHTML = '🟢 онлайн';
 }
 
 // ============ УВЕДОМЛЕНИЯ ============
@@ -309,9 +414,10 @@ async function loadNotifications() {
         const notifs = await res.json();
         const unreadCount = notifs.filter(n => !n.read).length;
         if(unreadCount > 0) {
-            document.getElementById('myAvatar').classList.add('verified-badge');
+            document.getElementById('myAvatar').style.border = '2px solid #2b88d8';
+        } else {
+            document.getElementById('myAvatar').style.border = 'none';
         }
-        // Не показываем автоматически, только по клику
     } catch(e) {}
 }
 
@@ -324,13 +430,12 @@ async function openTelegramNotifications() {
     } else {
         container.innerHTML = notifs.map(n => `
             <div class="notification ${!n.read ? 'unread' : ''}">
-                <strong>${n.title}</strong><br>
-                ${n.message}<br>
+                <strong>${escapeHtml(n.title)}</strong><br>
+                ${escapeHtml(n.message)}<br>
                 <span style="font-size:11px;color:#aaa">${new Date(n.ts).toLocaleString()}</span>
             </div>
         `).join('');
     }
-    // Помечаем как прочитанные
     await fetch(`${API_URL}/api/notifications/mark-read`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ userId: currentUser.id })
@@ -344,7 +449,6 @@ async function openSpamInfoBot() {
     container.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">Загрузка...</div>';
     openModal('spamBotModal');
     
-    // Получаем статус
     const res = await fetch(`${API_URL}/api/bot/spam-info`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ userId: currentUser.id, command: '/start' })
@@ -368,7 +472,7 @@ async function sendBotCommand() {
     const container = document.getElementById('botMessages');
     container.innerHTML += `
         <div class="bot-message" style="background:#2b5278">
-            <strong>👤 ${currentUser.name}</strong>
+            <strong>👤 ${escapeHtml(currentUser.name)}</strong>
             <div class="bot-response">${escapeHtml(text)}</div>
         </div>
     `;
@@ -396,7 +500,7 @@ async function sendBotCommand() {
     }
 }
 
-// ============ ЗАГРУЗКА ДАННЫХ ============
+// ============ ЗАГРУЗКА ДАННЫХ (обновление без перезагрузки) ============
 async function loadData() {
     const [usersRes, dialogsRes, chatsRes] = await Promise.all([
         fetch(`${API_URL}/api/users`),
@@ -407,6 +511,12 @@ async function loadData() {
     dialogs = await dialogsRes.json();
     myChats = await chatsRes.json();
     renderChatList();
+    // Если открыт чат с пользователем, обновляем его статус
+    if(currentChatId && !currentChatId.startsWith('chat_')) {
+        const user = allUsers.find(u => u.id === currentChatId);
+        if(user) updateChatHeader(user);
+        loadMessages(); // перезагружаем сообщения на всякий случай
+    }
 }
 
 function renderChatList() {
@@ -415,17 +525,17 @@ function renderChatList() {
     for(const dialog of dialogs) {
         const otherId = dialog.user1 === currentUser.id ? dialog.user2 : dialog.user1;
         const user = allUsers.find(u => u.id === otherId);
-        if(user) items.push({ type: 'user', id: user.id, name: user.name });
+        if(user) items.push({ type: 'user', id: user.id, name: getUserDisplay(user).name, avatar: getUserDisplay(user).avatar, avatarClass: getUserDisplay(user).avatarClass });
     }
     for(const chat of myChats) {
-        items.push({ type: chat.type, id: chat.id, name: chat.title });
+        items.push({ type: chat.type, id: chat.id, name: chat.title, avatar: chat.type === 'channel' ? '📢' : '👥', avatarClass: '' });
     }
     const filtered = search ? items.filter(i => i.name.toLowerCase().includes(search)) : items;
     const container = document.getElementById('chatList');
     if(filtered.length === 0) { container.innerHTML = '<div style="padding:40px;text-align:center;color:#aaa">Нет чатов</div>'; return; }
     container.innerHTML = filtered.map(i => `
         <div class="chat-item" onclick="openChat('${i.type}', '${i.id}')">
-            <div class="avatar-small">${i.type === 'user' ? (i.name[0] || '?') : (i.type === 'channel' ? '📢' : '👥')}</div>
+            <div class="avatar-small ${i.avatarClass}">${i.avatar}</div>
             <div><div class="chat-name">${escapeHtml(i.name)}</div></div>
         </div>
     `).join('');
@@ -439,21 +549,21 @@ async function openChat(type, id) {
             body:JSON.stringify({ user1: currentUser.id, user2: id })
         });
         currentChatId = id;
+        const user = allUsers.find(u => u.id === id);
+        if(user) updateChatHeader(user);
     } else {
         await fetch(`${API_URL}/api/chats/${id}/join`, {
             method:'POST', headers:{'Content-Type':'application/json'},
             body:JSON.stringify({ userId: currentUser.id })
         });
         currentChatId = `chat_${id}`;
+        document.getElementById('chatNameContainer').innerHTML = `<strong>${escapeHtml(myChats.find(c=>c.id===id)?.title || 'Чат')}</strong>`;
+        document.getElementById('chatAvatar').innerHTML = myChats.find(c=>c.id===id)?.type === 'channel' ? '📢' : '👥';
+        document.getElementById('chatStatus').innerHTML = '';
     }
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('chatView').style.display = 'flex';
     document.getElementById('chatHeader').style.display = 'flex';
-    const user = allUsers.find(u => u.id === id);
-    document.getElementById('chatName').innerHTML = user ? user.name : 'Чат';
-    document.getElementById('chatAvatar').innerHTML = user ? (user.name[0] || '?') : '📢';
-    const tagsHtml = (user?.tags || []).map(t => `<span class="tag">${t}</span>`).join('');
-    document.getElementById('chatTags').innerHTML = tagsHtml;
     await loadMessages();
 }
 
@@ -526,14 +636,15 @@ async function openProfile(userId) {
     const res = await fetch(`${API_URL}/api/users/${userId}`);
     const user = await res.json();
     if(!user) return;
-    document.getElementById('profileTitle').innerHTML = user.name;
+    const display = getUserDisplay(user);
+    document.getElementById('profileTitle').innerHTML = display.name;
     document.getElementById('profileBody').innerHTML = `
         <div style="text-align:center">
-            <div class="avatar-small" style="width:80px;height:80px;font-size:32px;margin:0 auto 12px">${user.name[0]}</div>
-            <div><strong>${escapeHtml(user.name)}</strong></div>
+            <div class="avatar-small ${display.avatarClass}" style="width:80px;height:80px;font-size:32px;margin:0 auto 12px">${display.avatar}</div>
+            <div><strong>${escapeHtml(display.name)}</strong></div>
             <div>@${escapeHtml(user.username)}</div>
             <div style="color:#f5a623">⭐ ${user.stars}</div>
-            <div style="margin-top:8px">${(user.tags || []).map(t => `<span class="tag">${t}</span>`).join('')}</div>
+            <div style="margin-top:8px">${(user.tags || []).map(t => `<span class="badge badge-${t}">${t}</span>`).join('')}</div>
             ${user.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(user.bio)}</div>` : ''}
             ${userId === currentUser.id ? '<button onclick="editProfile()" style="margin-top:12px;width:100%">✏️ Редактировать</button>' : '<button onclick="closeModal(\'profileModal\')" style="margin-top:12px;width:100%">Закрыть</button>'}
         </div>
@@ -547,11 +658,12 @@ function editProfile() {
         fetch(`${API_URL}/api/users/${currentUser.id}`, {
             method:'PUT', headers:{'Content-Type':'application/json'},
             body:JSON.stringify({ name: newName })
+        }).then(() => {
+            currentUser.name = newName;
+            updateUI();
+            closeModal('profileModal');
+            loadData();
         });
-        currentUser.name = newName;
-        updateUI();
-        closeModal('profileModal');
-        loadData();
     }
 }
 
@@ -621,13 +733,29 @@ function openShop() { alert('Магазин подарков - в разрабо
 function openMyNFTs() { alert('Ваши NFT - в разработке'); }
 
 // ============ ОБЩИЕ ============
-function logout() { currentUser = null; location.reload(); }
-function startPolling() { setInterval(() => { if(currentChatId) loadMessages(); loadData(); loadNotifications(); }, 3000); }
+function logout() { 
+    currentUser = null; 
+    localStorage.removeItem('tg_user');
+    if(pollInterval) clearInterval(pollInterval);
+    if(adminBannerInterval) clearInterval(adminBannerInterval);
+    location.reload(); 
+}
+function startPolling() { 
+    if(pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(() => { 
+        if(currentChatId) loadMessages(); 
+        loadData(); 
+        loadNotifications();
+    }, 3000); 
+}
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openDrawer() { document.getElementById('drawer').classList.add('open'); document.getElementById('drawerOverlay').style.display = 'block'; }
 function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerOverlay').style.display = 'none'; }
 function escapeHtml(str) { return String(str||'').replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+
+// Запуск
+loadSession();
 </script>
 </body>
 </html>
