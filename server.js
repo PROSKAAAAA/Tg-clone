@@ -3,788 +3,473 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json());
 app.use(express.static('public'));
 
-// ============ SQLite ============
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('tg_clone.db');
+// ============ БД В ПАМЯТИ (РАБОТАЕТ) ============
+const users = new Map();
+const messages = new Map();
+const dialogs = new Map();
+const reports = [];
+const appeals = [];
+const chats = new Map();
+const subscriptions = new Map();
+const botMessages = new Map();
 
-db.serialize(() => {
-    // ========== ПОЛЬЗОВАТЕЛИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        username TEXT UNIQUE,
-        password TEXT,
-        avatar TEXT,
-        bio TEXT,
-        stars INTEGER DEFAULT 100,
-        spamBlocked INTEGER DEFAULT 0,
-        spamReason TEXT,
-        spamUntil INTEGER,
-        banned INTEGER DEFAULT 0,
-        frozen INTEGER DEFAULT 0,
-        tags TEXT,
-        selectedGift TEXT,
-        createdAt INTEGER
-    )`);
-    
-    // ========== КАНАЛЫ И ГРУППЫ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS chats (
-        id TEXT PRIMARY KEY,
-        type TEXT,
-        title TEXT,
-        avatar TEXT,
-        description TEXT,
-        creatorId TEXT,
-        isPublic INTEGER DEFAULT 1,
-        members TEXT,
-        createdAt INTEGER
-    )`);
-    
-    // ========== ЛИЧНЫЕ ДИАЛОГИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS dialogs (
-        id TEXT PRIMARY KEY,
-        user1 TEXT,
-        user2 TEXT,
-        lastMessage TEXT,
-        lastMessageTime INTEGER,
-        updatedAt INTEGER
-    )`);
-    
-    // ========== СООБЩЕНИЯ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        chatId TEXT,
-        fromUserId TEXT,
-        type TEXT,
-        text TEXT,
-        data TEXT,
-        fileName TEXT,
-        ts INTEGER,
-        read INTEGER DEFAULT 0
-    )`);
-    
-    // ========== ПОДПИСКИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS subscriptions (
-        userId TEXT,
-        chatId TEXT,
-        role TEXT,
-        joinedAt INTEGER
-    )`);
-    
-    // ========== ЖАЛОБЫ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS reports (
-        id TEXT PRIMARY KEY,
-        fromUserId TEXT,
-        againstId TEXT,
-        type TEXT,
-        reason TEXT,
-        comment TEXT,
-        status TEXT,
-        ts INTEGER
-    )`);
-    
-    // ========== АПЕЛЛЯЦИИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS appeals (
-        id TEXT PRIMARY KEY,
-        userId TEXT,
-        reason TEXT,
-        status TEXT,
-        adminComment TEXT,
-        ts INTEGER
-    )`);
-    
-    // ========== NFT ПОДАРКИ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS nft_collections (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        emoji TEXT,
-        type TEXT,
-        price INTEGER,
-        maxSupply INTEGER,
-        models TEXT,
-        backgrounds TEXT,
-        upgradePrice INTEGER,
-        upgradedModels TEXT,
-        upgradedBackgrounds TEXT,
-        rarity TEXT,
-        minted INTEGER DEFAULT 0
-    )`);
-    
-    db.run(`CREATE TABLE IF NOT EXISTS nft_items (
-        id TEXT PRIMARY KEY,
-        collectionId TEXT,
-        serialNumber TEXT,
-        ownerId TEXT,
-        isUpgraded INTEGER DEFAULT 0,
-        selectedModel TEXT,
-        selectedBackground TEXT,
-        mintedAt INTEGER
-    )`);
-    
-    // ========== СИСТЕМНЫЙ БОТ ==========
-    db.run(`CREATE TABLE IF NOT EXISTS bot_messages (
-        id TEXT PRIMARY KEY,
-        userId TEXT,
-        title TEXT,
-        message TEXT,
-        read INTEGER DEFAULT 0,
-        ts INTEGER
-    )`);
-    
-    // Дефолтные данные
-    const defaultModels = JSON.stringify([
-        { url: '', probability: 70, name: 'Обычная' },
-        { url: '', probability: 20, name: 'Редкая' },
-        { url: '', probability: 10, name: 'Легендарная' }
-    ]);
-    
-    const defaultBackgrounds = JSON.stringify([
-        { type: 'color', value: '#000000', probability: 12, name: 'Black' },
-        { type: 'color', value: '#0a0a0a', probability: 10, name: 'Onyx Black' },
-        { type: 'color', value: '#182533', probability: 10, name: 'Тёмный' },
-        { type: 'color', value: '#2b5278', probability: 10, name: 'Синий' },
-        { type: 'color', value: '#2b2b52', probability: 8, name: 'Фиолетовый' },
-        { type: 'color', value: '#1e3a2f', probability: 8, name: 'Зелёный' },
-        { type: 'color', value: '#3d2b1f', probability: 8, name: 'Коричневый' },
-        { type: 'color', value: '#2b1f3d', probability: 8, name: 'Пурпурный' },
-        { type: 'color', value: '#3d1f2b', probability: 8, name: 'Бордовый' },
-        { type: 'color', value: '#1f3d3d', probability: 8, name: 'Бирюзовый' },
-        { type: 'color', value: '#3d3d1f', probability: 5, name: 'Оливковый' },
-        { type: 'color', value: '#1f1f3d', probability: 5, name: 'Тёмно-синий' }
-    ]);
-    
-    db.get("SELECT COUNT(*) as count FROM nft_collections", (err, row) => {
-        if (row && row.count === 0) {
-            db.run(`INSERT INTO nft_collections (id, name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity, minted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                ['nft1', 'Магический кристалл', '🔮', 'tgs', 100, 1000, defaultModels, defaultBackgrounds, 250, defaultModels, defaultBackgrounds, 'rare', 0]);
-        }
-    });
-    
-    db.get("SELECT COUNT(*) as count FROM users WHERE username = 'admin'", (err, row) => {
-        if (row && row.count === 0) {
-            const hash = bcrypt.hashSync('admin2024', 10);
-            db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, frozen, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                ['admin', 'Admin', 'admin', hash, 999999, JSON.stringify(['verified']), Date.now(), 0, 0, 0]);
-        }
-    });
+// Дефолтный админ
+users.set('admin', {
+    id: 'admin',
+    name: 'Admin',
+    username: 'admin',
+    password: bcrypt.hashSync('admin2024', 10),
+    stars: 999999,
+    tags: ['verified'],
+    banned: false,
+    frozen: false,
+    spamBlocked: false,
+    spamReason: null,
+    spamUntil: null,
+    avatar: null,
+    bio: null
+});
+
+// Дефолтный тестовый пользователь
+users.set('user', {
+    id: 'user',
+    name: 'Test User',
+    username: 'user',
+    password: bcrypt.hashSync('1234', 10),
+    stars: 100,
+    tags: [],
+    banned: false,
+    frozen: false,
+    spamBlocked: false,
+    spamReason: null,
+    spamUntil: null,
+    avatar: null,
+    bio: null
+});
+
+// Дефолтный канал
+chats.set('channel1', {
+    id: 'channel1',
+    type: 'channel',
+    title: 'Новости',
+    description: 'Главные новости',
+    creatorId: 'admin',
+    isPublic: 1,
+    members: ['admin']
 });
 
 // ============ СТРАНИЦЫ ==========
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'messenger.html')));
 app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
-// ============ БОТ УВЕДОМЛЕНИЯ ==========
-function sendBotNotification(userId, title, message) {
-    const msgId = uuidv4();
-    db.run(`INSERT INTO bot_messages (id, userId, title, message, ts) VALUES (?, ?, ?, ?, ?)`,
-        [msgId, userId, title, message, Date.now()]);
-}
-
-app.get('/api/bot/messages/:userId', (req, res) => {
-    db.all("SELECT * FROM bot_messages WHERE userId = ? ORDER BY ts DESC", [req.params.userId], (err, msgs) => {
-        res.json(msgs || []);
-    });
-});
-
-app.post('/api/bot/messages/mark-read', (req, res) => {
-    db.run("UPDATE bot_messages SET read = 1 WHERE userId = ?", [req.body.userId]);
-    res.json({ success: true });
-});
-
-app.post('/api/bot/spam-info', (req, res) => {
-    const { userId } = req.body;
-    db.get("SELECT spamBlocked, spamReason, spamUntil, name FROM users WHERE id = ?", [userId], (err, user) => {
-        if (!user) return res.json({ exists: false });
-        res.json({
-            exists: true,
-            isBlocked: user.spamBlocked === 1,
-            reason: user.spamReason,
-            until: user.spamUntil,
-            name: user.name
-        });
-    });
-});
-
 // ============ АУТЕНТИФИКАЦИЯ ==========
 app.post('/api/register', async (req, res) => {
     const { name, username, password } = req.body;
-    if (!name || !username || !password) return res.status(400).json({ error: 'Заполните все поля' });
-    if (password.length < 4) return res.status(400).json({ error: 'Пароль минимум 4 символа' });
+    if (!name || !username || !password) return res.status(400).json({ error: 'Заполните поля' });
+    if (users.has(username)) return res.status(400).json({ error: 'Пользователь уже есть' });
     
-    db.get("SELECT * FROM users WHERE username = ?", [username], async (err, user) => {
-        if (user) return res.status(400).json({ error: 'Пользователь уже существует' });
-        
-        const hashed = await bcrypt.hash(password, 10);
-        db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, frozen, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [username, name, username, hashed, 100, JSON.stringify([]), Date.now(), 0, 0, 0],
-            (err) => {
-                if (err) return res.status(500).json({ error: 'Ошибка' });
-                sendBotNotification(username, '🔐 Новый аккаунт', `Добро пожаловать в Telegram, ${name}!`);
-                res.json({ success: true, user: { id: username, name, username, stars: 100 } });
-            });
+    users.set(username, {
+        id: username,
+        name,
+        username,
+        password: await bcrypt.hash(password, 10),
+        stars: 100,
+        tags: [],
+        banned: false,
+        frozen: false,
+        spamBlocked: false,
+        spamReason: null,
+        spamUntil: null,
+        avatar: null,
+        bio: null
     });
+    
+    res.json({ success: true, user: { id: username, name, username, stars: 100 } });
 });
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
+    const user = users.get(username);
+    if (!user) return res.status(400).json({ error: 'Пользователь не найден' });
+    if (user.banned) return res.status(403).json({ error: 'Аккаунт заблокирован' });
     
-    db.get("SELECT * FROM users WHERE username = ? AND id != 'admin'", [username], async (err, user) => {
-        if (!user) return res.status(400).json({ error: 'Пользователь не найден' });
-        
-        const valid = await bcrypt.compare(password, user.password);
-        if (!valid) return res.status(400).json({ error: 'Неверный пароль' });
-        if (user.banned) return res.status(403).json({ error: 'Аккаунт заблокирован' });
-        
-        let tags = [];
-        try { tags = JSON.parse(user.tags); } catch(e) {}
-        
-        sendBotNotification(username, '🔐 Новый вход', `Вход в аккаунт @${username} с нового устройства`);
-        
-        res.json({
-            success: true,
-            user: {
-                id: user.id,
-                name: user.name,
-                username: user.username,
-                avatar: user.avatar,
-                bio: user.bio,
-                stars: user.stars || 0,
-                tags: tags,
-                selectedGift: user.selectedGift || null,
-                spamBlocked: user.spamBlocked,
-                spamReason: user.spamReason,
-                spamUntil: user.spamUntil,
-                banned: user.banned,
-                frozen: user.frozen
-            }
-        });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(400).json({ error: 'Неверный пароль' });
+    
+    res.json({
+        success: true,
+        user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            stars: user.stars,
+            tags: user.tags,
+            banned: user.banned,
+            frozen: user.frozen,
+            spamBlocked: user.spamBlocked,
+            avatar: user.avatar,
+            bio: user.bio
+        }
     });
 });
 
 app.get('/api/users', (req, res) => {
-    db.all("SELECT id, name, username, avatar, stars, tags, banned, frozen, spamBlocked, bio, selectedGift FROM users WHERE id != 'admin'", (err, users) => {
-        if (err) return res.json([]);
-        users.forEach(u => { try { u.tags = JSON.parse(u.tags); } catch(e) { u.tags = []; } });
-        res.json(users);
-    });
+    const all = Array.from(users.values()).filter(u => u.id !== 'admin').map(u => ({
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        stars: u.stars,
+        tags: u.tags,
+        banned: u.banned,
+        frozen: u.frozen,
+        avatar: u.avatar,
+        bio: u.bio
+    }));
+    res.json(all);
 });
 
 app.get('/api/users/:id', (req, res) => {
-    db.get("SELECT id, name, username, avatar, stars, tags, bio, selectedGift, banned, frozen, spamBlocked, spamReason, spamUntil FROM users WHERE id = ? AND id != 'admin'", [req.params.id], (err, user) => {
-        if (!user) return res.status(404).json({ error: 'Не найден' });
-        try { user.tags = JSON.parse(user.tags); } catch(e) { user.tags = []; }
-        res.json(user);
+    const user = users.get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Не найден' });
+    res.json({
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        stars: user.stars,
+        tags: user.tags,
+        bio: user.bio,
+        avatar: user.avatar,
+        frozen: user.frozen,
+        banned: user.banned
     });
 });
 
 app.put('/api/users/:id', (req, res) => {
-    const { id } = req.params;
-    const { stars, banned, frozen, spamBlocked, spamReason, spamUntil, name, bio, avatar, tags, selectedGift } = req.body;
+    const user = users.get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Не найден' });
     
-    if (stars !== undefined) db.run("UPDATE users SET stars = ? WHERE id = ?", [stars, id]);
-    if (banned !== undefined) db.run("UPDATE users SET banned = ? WHERE id = ?", [banned ? 1 : 0, id]);
-    if (frozen !== undefined) db.run("UPDATE users SET frozen = ? WHERE id = ?", [frozen ? 1 : 0, id]);
-    if (spamBlocked !== undefined) db.run("UPDATE users SET spamBlocked = ? WHERE id = ?", [spamBlocked ? 1 : 0, id]);
-    if (spamReason !== undefined) db.run("UPDATE users SET spamReason = ? WHERE id = ?", [spamReason, id]);
-    if (spamUntil !== undefined) db.run("UPDATE users SET spamUntil = ? WHERE id = ?", [spamUntil, id]);
-    if (name !== undefined) db.run("UPDATE users SET name = ? WHERE id = ?", [name, id]);
-    if (bio !== undefined) db.run("UPDATE users SET bio = ? WHERE id = ?", [bio, id]);
-    if (avatar !== undefined) db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatar, id]);
-    if (tags !== undefined) db.run("UPDATE users SET tags = ? WHERE id = ?", [JSON.stringify(tags), id]);
-    if (selectedGift !== undefined) db.run("UPDATE users SET selectedGift = ? WHERE id = ?", [selectedGift, id]);
+    if (req.body.stars !== undefined) user.stars = req.body.stars;
+    if (req.body.banned !== undefined) user.banned = req.body.banned;
+    if (req.body.frozen !== undefined) user.frozen = req.body.frozen;
+    if (req.body.name !== undefined) user.name = req.body.name;
+    if (req.body.bio !== undefined) user.bio = req.body.bio;
+    if (req.body.avatar !== undefined) user.avatar = req.body.avatar;
+    if (req.body.tags !== undefined) user.tags = req.body.tags;
     
-    if (spamBlocked === true) {
-        sendBotNotification(id, '🚫 Спам-блок', `Вы получили спам-блок! Причина: ${spamReason || 'нарушение правил'}. Подробнее: @SpamInfoBot`);
+    if (req.body.spamBlocked !== undefined) {
+        user.spamBlocked = req.body.spamBlocked;
+        user.spamReason = req.body.spamReason;
+        user.spamUntil = req.body.spamUntil;
+        
+        // Уведомление бота @TelegramNotifications
+        const botMsg = {
+            id: uuidv4(),
+            userId: user.id,
+            title: '🚫 Спам-блок',
+            message: `Вы получили спам-блок! Причина: ${user.spamReason || 'нарушение правил'}. Подробнее: @SpamInfoBot`,
+            ts: Date.now(),
+            read: 0
+        };
+        if (!botMessages.has(user.id)) botMessages.set(user.id, []);
+        botMessages.get(user.id).push(botMsg);
     }
     
     res.json({ success: true });
 });
 
-// ============ ЛИЧНЫЕ ДИАЛОГИ ==========
+// ============ ДИАЛОГИ ==========
 app.post('/api/dialogs', (req, res) => {
     const { user1, user2 } = req.body;
     const dialogId = [user1, user2].sort().join('_');
-    
-    db.get("SELECT * FROM dialogs WHERE id = ?", [dialogId], (err, existing) => {
-        if (!existing) {
-            db.run(`INSERT INTO dialogs (id, user1, user2, updatedAt) VALUES (?, ?, ?, ?)`,
-                [dialogId, user1, user2, Date.now()]);
-        }
-        res.json({ success: true, dialogId });
-    });
+    if (!dialogs.has(dialogId)) {
+        dialogs.set(dialogId, { id: dialogId, user1, user2, lastMessage: null, updatedAt: Date.now() });
+    }
+    res.json({ success: true, dialogId });
 });
 
 app.get('/api/dialogs/:userId', (req, res) => {
     const userId = req.params.userId;
-    db.all(`SELECT * FROM dialogs WHERE user1 = ? OR user2 = ? ORDER BY updatedAt DESC`, [userId, userId], (err, dialogs) => {
-        res.json(dialogs || []);
-    });
+    const userDialogs = Array.from(dialogs.values()).filter(d => d.user1 === userId || d.user2 === userId);
+    res.json(userDialogs);
 });
 
-// ============ СООБЩЕНИЯ С ПРОВЕРКОЙ ==========
-app.post('/api/messages', (req, res) => {
+// ============ СООБЩЕНИЯ ==========
+app.post('/api/messages', async (req, res) => {
     const { from, to, type, text } = req.body;
+    const sender = users.get(from);
     
-    db.get("SELECT spamBlocked, spamUntil, frozen, banned FROM users WHERE id = ?", [from], (err, user) => {
-        if (user && user.spamBlocked) {
-            if (user.spamUntil && user.spamUntil > Date.now()) {
-                return res.status(403).json({ error: 'spam_blocked', reason: user.spamReason, until: user.spamUntil });
-            } else if (user.spamUntil && user.spamUntil <= Date.now()) {
-                db.run("UPDATE users SET spamBlocked = 0, spamReason = NULL, spamUntil = NULL WHERE id = ?", [from]);
-            } else {
-                return res.status(403).json({ error: 'spam_blocked', reason: user.spamReason });
-            }
+    // Проверка спам-блока
+    if (sender.spamBlocked) {
+        if (sender.spamUntil && sender.spamUntil > Date.now()) {
+            return res.status(403).json({ error: 'spam_blocked', reason: sender.spamReason, until: sender.spamUntil });
+        } else if (sender.spamUntil && sender.spamUntil <= Date.now()) {
+            sender.spamBlocked = false;
+            sender.spamReason = null;
+            sender.spamUntil = null;
+        } else {
+            return res.status(403).json({ error: 'spam_blocked', reason: sender.spamReason });
         }
-        if (user && user.frozen) {
-            return res.status(403).json({ error: 'frozen' });
-        }
-        if (user && user.banned) {
-            return res.status(403).json({ error: 'banned' });
-        }
-        
-        const dialogId = [from, to].sort().join('_');
-        const messageId = uuidv4();
-        
-        db.run(`INSERT OR REPLACE INTO dialogs (id, user1, user2, lastMessage, lastMessageTime, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
-            [dialogId, from, to, text || '[медиа]', Date.now(), Date.now()]);
-        
-        db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-            [messageId, dialogId, from, type, text, Date.now()],
-            (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
-    });
+    }
+    
+    if (sender.frozen) return res.status(403).json({ error: 'frozen' });
+    if (sender.banned) return res.status(403).json({ error: 'banned' });
+    
+    const dialogId = [from, to].sort().join('_');
+    if (!messages.has(dialogId)) messages.set(dialogId, []);
+    
+    const msg = {
+        id: uuidv4(),
+        fromUserId: from,
+        type,
+        text,
+        ts: Date.now()
+    };
+    messages.get(dialogId).push(msg);
+    
+    const dialog = dialogs.get(dialogId);
+    if (dialog) {
+        dialog.lastMessage = text;
+        dialog.updatedAt = Date.now();
+        dialogs.set(dialogId, dialog);
+    }
+    
+    res.json({ success: true });
 });
 
 app.get('/api/messages/:userId', (req, res) => {
-    const { userId } = req.params;
     const currentUserId = req.query.currentUserId;
-    const dialogId = [currentUserId, userId].sort().join('_');
-    
-    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [dialogId], (err, messages) => {
-        res.json(messages || []);
+    const dialogId = [currentUserId, req.params.userId].sort().join('_');
+    const msgs = messages.get(dialogId) || [];
+    res.json(msgs);
+});
+
+// ============ СПАМ-ИНФО БОТ ==========
+app.get('/api/bot/spam-info/:userId', (req, res) => {
+    const user = users.get(req.params.userId);
+    if (!user) return res.json({ exists: false });
+    res.json({
+        exists: true,
+        isBlocked: user.spamBlocked,
+        reason: user.spamReason,
+        until: user.spamUntil,
+        name: user.name
     });
+});
+
+app.get('/api/bot/messages/:userId', (req, res) => {
+    const msgs = botMessages.get(req.params.userId) || [];
+    res.json(msgs);
 });
 
 // ============ КАНАЛЫ И ГРУППЫ ==========
+app.get('/api/chats', (req, res) => {
+    res.json(Array.from(chats.values()));
+});
+
 app.post('/api/chats', (req, res) => {
     const { type, title, description, creatorId, isPublic } = req.body;
-    const chatId = uuidv4();
-    
-    db.run(`INSERT INTO chats (id, type, title, description, creatorId, isPublic, members, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [chatId, type, title, description, creatorId, isPublic !== false ? 1 : 0, JSON.stringify([creatorId]), Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            db.run(`INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)`, [creatorId, chatId, 'creator', Date.now()]);
-            res.json({ success: true, chatId });
-        });
-});
-
-app.get('/api/chats', (req, res) => {
-    db.all("SELECT * FROM chats ORDER BY createdAt DESC", (err, chats) => {
-        res.json(chats || []);
+    const id = uuidv4();
+    chats.set(id, {
+        id,
+        type,
+        title,
+        description,
+        creatorId,
+        isPublic: isPublic !== false ? 1 : 0,
+        members: [creatorId]
     });
-});
-
-app.get('/api/chats/:id', (req, res) => {
-    db.get("SELECT * FROM chats WHERE id = ?", [req.params.id], (err, chat) => {
-        if (!chat) return res.status(404).json({ error: 'Не найден' });
-        res.json(chat);
-    });
-});
-
-app.post('/api/chats/:id/join', (req, res) => {
-    const { id } = req.params;
-    const { userId } = req.body;
-    
-    db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
-        if (!chat) return res.status(404).json({ error: 'Чат не найден' });
-        if (chat.isPublic === 0) return res.status(403).json({ error: 'Чат приватный' });
-        
-        let members = [];
-        try { members = JSON.parse(chat.members); } catch(e) {}
-        if (!members.includes(userId)) {
-            members.push(userId);
-            db.run("UPDATE chats SET members = ? WHERE id = ?", [JSON.stringify(members), id]);
-            db.run("INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)", [userId, id, 'member', Date.now()]);
-        }
-        res.json({ success: true });
-    });
-});
-
-app.get('/api/chats/:id/messages', (req, res) => {
-    db.all("SELECT * FROM messages WHERE chatId = ? ORDER BY ts ASC", [req.params.id], (err, messages) => {
-        res.json(messages || []);
-    });
-});
-
-app.post('/api/chats/:id/messages', (req, res) => {
-    const { id } = req.params;
-    const { fromUserId, type, text } = req.body;
-    
-    db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
-        if (!chat) return res.status(404).json({ error: 'Чат не найден' });
-        if (chat.type === 'channel' && chat.creatorId !== fromUserId) {
-            return res.status(403).json({ error: 'Только создатель канала может писать' });
-        }
-        
-        const messageId = uuidv4();
-        db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-            [messageId, id, fromUserId, type, text, Date.now()],
-            (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
-    });
+    res.json({ success: true, id });
 });
 
 app.get('/api/my/chats/:userId', (req, res) => {
-    const userId = req.params.userId;
-    db.all("SELECT * FROM subscriptions WHERE userId = ?", [userId], (err, subs) => {
-        const chatIds = subs.map(s => s.chatId);
-        if (chatIds.length === 0) return res.json([]);
-        const placeholders = chatIds.map(() => '?').join(',');
-        db.all(`SELECT * FROM chats WHERE id IN (${placeholders})`, chatIds, (err, chats) => {
-            res.json(chats || []);
-        });
+    const userChats = Array.from(chats.values()).filter(c => c.members.includes(req.params.userId));
+    res.json(userChats);
+});
+
+app.post('/api/chats/:id/join', (req, res) => {
+    const chat = chats.get(req.params.id);
+    if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+    if (chat.isPublic === 0) return res.status(403).json({ error: 'Приватный чат' });
+    if (!chat.members.includes(req.body.userId)) {
+        chat.members.push(req.body.userId);
+        chats.set(req.params.id, chat);
+    }
+    res.json({ success: true });
+});
+
+app.post('/api/chats/:id/messages', (req, res) => {
+    const chat = chats.get(req.params.id);
+    if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+    if (chat.type === 'channel' && chat.creatorId !== req.body.fromUserId) {
+        return res.status(403).json({ error: 'Только создатель может писать' });
+    }
+    
+    const dialogId = `chat_${req.params.id}`;
+    if (!messages.has(dialogId)) messages.set(dialogId, []);
+    messages.get(dialogId).push({
+        id: uuidv4(),
+        fromUserId: req.body.fromUserId,
+        type: req.body.type,
+        text: req.body.text,
+        ts: Date.now()
     });
+    res.json({ success: true });
+});
+
+app.get('/api/chats/:id/messages', (req, res) => {
+    const dialogId = `chat_${req.params.id}`;
+    res.json(messages.get(dialogId) || []);
 });
 
 app.put('/api/chats/:id', (req, res) => {
-    const { id } = req.params;
-    const { isPublic, title, description } = req.body;
-    
-    if (isPublic !== undefined) db.run("UPDATE chats SET isPublic = ? WHERE id = ?", [isPublic ? 1 : 0, id]);
-    if (title !== undefined) db.run("UPDATE chats SET title = ? WHERE id = ?", [title, id]);
-    if (description !== undefined) db.run("UPDATE chats SET description = ? WHERE id = ?", [description, id]);
-    
+    const chat = chats.get(req.params.id);
+    if (!chat) return res.status(404).json({ error: 'Не найден' });
+    if (req.body.isPublic !== undefined) chat.isPublic = req.body.isPublic ? 1 : 0;
+    if (req.body.title !== undefined) chat.title = req.body.title;
+    if (req.body.description !== undefined) chat.description = req.body.description;
+    chats.set(req.params.id, chat);
     res.json({ success: true });
 });
 
 app.delete('/api/chats/:id', (req, res) => {
-    db.run("DELETE FROM chats WHERE id = ?", [req.params.id], (err) => {
-        db.run("DELETE FROM subscriptions WHERE chatId = ?", [req.params.id]);
-        db.run("DELETE FROM messages WHERE chatId = ?", [req.params.id]);
-        res.json({ success: true });
-    });
+    chats.delete(req.params.id);
+    res.json({ success: true });
 });
 
-// ============ NFT ПОДАРКИ ==========
-app.get('/api/nft/collections', (req, res) => {
-    db.all("SELECT * FROM nft_collections", (err, collections) => {
-        res.json(collections || []);
-    });
-});
-
-app.post('/api/nft/collections', (req, res) => {
-    const { name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity } = req.body;
-    const id = 'nft' + Date.now();
-    
-    db.run(`INSERT INTO nft_collections (id, name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity, minted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, name, emoji, type, price, maxSupply || 0, models || '[]', backgrounds || '[]', upgradePrice || 0, upgradedModels || '[]', upgradedBackgrounds || '[]', rarity || 'common', 0],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
-});
-
-app.put('/api/nft/collections/:id', (req, res) => {
-    const { id } = req.params;
-    const { name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity } = req.body;
-    
-    db.run(`UPDATE nft_collections SET name = ?, emoji = ?, type = ?, price = ?, maxSupply = ?, models = ?, backgrounds = ?, upgradePrice = ?, upgradedModels = ?, upgradedBackgrounds = ?, rarity = ? WHERE id = ?`,
-        [name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity, id],
-        (err) => { res.json({ success: true }); });
-});
-
-app.delete('/api/nft/collections/:id', (req, res) => {
-    db.run("DELETE FROM nft_collections WHERE id = ?", [req.params.id], (err) => {
-        db.run("DELETE FROM nft_items WHERE collectionId = ?", [req.params.id]);
-        res.json({ success: true });
-    });
-});
-
-app.post('/api/nft/buy', (req, res) => {
-    const { userId, collectionId } = req.body;
-    
-    db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
-        if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-        
-        db.get("SELECT * FROM nft_collections WHERE id = ?", [collectionId], (err, collection) => {
-            if (!collection) return res.status(404).json({ error: 'Коллекция не найдена' });
-            if (user.stars < collection.price) return res.status(400).json({ error: 'Недостаточно звёзд' });
-            if (collection.maxSupply > 0 && collection.minted >= collection.maxSupply) {
-                return res.status(400).json({ error: 'Лимит коллекции исчерпан' });
-            }
-            
-            let models = [];
-            try { models = JSON.parse(collection.models); } catch(e) {}
-            let selectedModel = null;
-            if (models.length > 0) {
-                let totalChance = models.reduce((sum, m) => sum + (m.probability || 0), 0);
-                let random = Math.random() * totalChance;
-                let accum = 0;
-                for (let m of models) {
-                    accum += (m.probability || 0);
-                    if (random <= accum) { selectedModel = m; break; }
-                }
-            }
-            
-            let backgrounds = [];
-            try { backgrounds = JSON.parse(collection.backgrounds); } catch(e) {}
-            let selectedBackground = null;
-            if (backgrounds.length > 0) {
-                let totalChance = backgrounds.reduce((sum, b) => sum + (b.probability || 0), 0);
-                let random = Math.random() * totalChance;
-                let accum = 0;
-                for (let bg of backgrounds) {
-                    accum += (bg.probability || 0);
-                    if (random <= accum) { selectedBackground = bg; break; }
-                }
-            }
-            
-            const serialNumber = `${collection.name.substring(0, 3)}-${String(collection.minted + 1).padStart(4, '0')}`;
-            const itemId = uuidv4();
-            
-            db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - collection.price, userId]);
-            db.run(`INSERT INTO nft_items (id, collectionId, serialNumber, ownerId, isUpgraded, selectedModel, selectedBackground, mintedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [itemId, collectionId, serialNumber, userId, 0, JSON.stringify(selectedModel), JSON.stringify(selectedBackground), Date.now()]);
-            db.run("UPDATE nft_collections SET minted = minted + 1 WHERE id = ?", [collectionId]);
-            
-            sendBotNotification(userId, '🛍️ Покупка NFT', `Вы купили ${collection.name} #${serialNumber} за ${collection.price} ⭐!`);
-            
-            res.json({ success: true, gift: { id: itemId, serialNumber, name: collection.name, emoji: collection.emoji, model: selectedModel, background: selectedBackground } });
-        });
-    });
-});
-
-app.post('/api/nft/upgrade', (req, res) => {
-    const { userId, itemId } = req.body;
-    
-    db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
-        if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-        
-        db.get("SELECT * FROM nft_items WHERE id = ? AND ownerId = ?", [itemId, userId], (err, item) => {
-            if (!item) return res.status(404).json({ error: 'Предмет не найден' });
-            if (item.isUpgraded) return res.status(400).json({ error: 'Уже улучшен' });
-            
-            db.get("SELECT * FROM nft_collections WHERE id = ?", [item.collectionId], (err, collection) => {
-                if (!collection) return res.status(404).json({ error: 'Коллекция не найдена' });
-                if (user.stars < collection.upgradePrice) return res.status(400).json({ error: 'Недостаточно звёзд' });
-                
-                let upgradedModels = [];
-                try { upgradedModels = JSON.parse(collection.upgradedModels); } catch(e) {}
-                let selectedModel = null;
-                if (upgradedModels.length > 0) {
-                    let totalChance = upgradedModels.reduce((sum, m) => sum + (m.probability || 0), 0);
-                    let random = Math.random() * totalChance;
-                    let accum = 0;
-                    for (let m of upgradedModels) {
-                        accum += (m.probability || 0);
-                        if (random <= accum) { selectedModel = m; break; }
-                    }
-                }
-                
-                let upgradedBackgrounds = [];
-                try { upgradedBackgrounds = JSON.parse(collection.upgradedBackgrounds); } catch(e) {}
-                let selectedBackground = null;
-                if (upgradedBackgrounds.length > 0) {
-                    let totalChance = upgradedBackgrounds.reduce((sum, b) => sum + (b.probability || 0), 0);
-                    let random = Math.random() * totalChance;
-                    let accum = 0;
-                    for (let bg of upgradedBackgrounds) {
-                        accum += (bg.probability || 0);
-                        if (random <= accum) { selectedBackground = bg; break; }
-                    }
-                }
-                
-                const newSerialNumber = `${collection.name.substring(0, 3)}-UP-${String(collection.minted + 1).padStart(4, '0')}`;
-                
-                db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - collection.upgradePrice, userId]);
-                db.run(`UPDATE nft_items SET isUpgraded = 1, serialNumber = ?, selectedModel = ?, selectedBackground = ? WHERE id = ?`, 
-                    [newSerialNumber, JSON.stringify(selectedModel), JSON.stringify(selectedBackground), itemId]);
-                
-                sendBotNotification(userId, '✨ Улучшение NFT', `Вы улучшили ${collection.name} до #${newSerialNumber} за ${collection.upgradePrice} ⭐!`);
-                
-                res.json({ success: true, stars: user.stars - collection.upgradePrice, gift: { serialNumber: newSerialNumber, model: selectedModel, background: selectedBackground } });
-            });
-        });
-    });
-});
-
-app.get('/api/nft/user/:userId', (req, res) => {
-    db.all(`SELECT n.*, c.name as collectionName, c.emoji, c.rarity, c.models, c.upgradedModels
-            FROM nft_items n 
-            JOIN nft_collections c ON n.collectionId = c.id 
-            WHERE n.ownerId = ?`, [req.params.userId], (err, items) => {
-        res.json(items || []);
-    });
-});
-
-app.get('/api/nft/item/:itemId', (req, res) => {
-    db.get(`SELECT n.*, c.name as collectionName, c.emoji, c.rarity, c.price, c.upgradePrice, c.models, c.upgradedModels
-            FROM nft_items n 
-            JOIN nft_collections c ON n.collectionId = c.id 
-            WHERE n.id = ?`, [req.params.itemId], (err, item) => {
-        if (!item) return res.status(404).json({ error: 'Не найден' });
-        try { item.selectedModel = JSON.parse(item.selectedModel); } catch(e) {}
-        try { item.selectedBackground = JSON.parse(item.selectedBackground); } catch(e) {}
-        res.json(item);
-    });
-});
-
-app.post('/api/nft/select', (req, res) => {
-    const { userId, itemId } = req.body;
-    db.run("UPDATE users SET selectedGift = ? WHERE id = ?", [itemId, userId], (err) => {
-        res.json({ success: true });
-    });
-});
-
-// ============ ЖАЛОБЫ (на пользователей и каналы) ==========
+// ============ ЖАЛОБЫ ==========
 app.get('/api/reports', (req, res) => {
-    db.all("SELECT * FROM reports ORDER BY ts DESC", (err, reports) => {
-        res.json(reports || []);
-    });
+    res.json(reports);
 });
 
 app.post('/api/reports', (req, res) => {
-    const { from, againstId, type, reason, comment } = req.body;
-    const reportId = uuidv4();
-    
-    db.run(`INSERT INTO reports (id, fromUserId, againstId, type, reason, comment, status, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [reportId, from, againstId, type, reason, comment || '', 'pending', Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
+    reports.push({
+        id: uuidv4(),
+        fromUserId: req.body.from,
+        againstId: req.body.againstId,
+        type: req.body.type,
+        reason: req.body.reason,
+        comment: req.body.comment,
+        status: 'pending',
+        ts: Date.now()
+    });
+    res.json({ success: true });
 });
 
 app.put('/api/reports/:id', (req, res) => {
-    const { id } = req.params;
-    const { status, action, duration } = req.body;
+    const report = reports.find(r => r.id === req.params.id);
+    if (!report) return res.status(404).json({ error: 'Не найдено' });
     
-    db.get("SELECT againstId, type FROM reports WHERE id = ?", [id], (err, report) => {
-        if (!report) return res.status(404).json({ error: 'Не найдено' });
-        
-        db.run("UPDATE reports SET status = ? WHERE id = ?", [status, id]);
-        
-        if (report.type === 'user') {
-            if (action === 'ban') db.run("UPDATE users SET banned = 1 WHERE id = ?", [report.againstId]);
-            if (action === 'freeze') db.run("UPDATE users SET frozen = 1 WHERE id = ?", [report.againstId]);
-            if (action === 'spam') {
-                const until = duration ? Date.now() + (duration * 60 * 60 * 1000) : null;
-                db.run("UPDATE users SET spamBlocked = 1, spamReason = ?, spamUntil = ? WHERE id = ?", 
-                    [`Жалоба: ${action}`, until, report.againstId]);
-                sendBotNotification(report.againstId, '🚫 Спам-блок', `Вы получили спам-блок! Причина: жалоба. Подробнее: @SpamInfoBot`);
-            }
-        } else if (report.type === 'chat') {
-            if (action === 'delete') db.run("DELETE FROM chats WHERE id = ?", [report.againstId]);
+    report.status = req.body.status;
+    if (req.body.action === 'delete' && report.type === 'chat') {
+        chats.delete(report.againstId);
+    }
+    if (req.body.action === 'ban') {
+        const user = users.get(report.againstId);
+        if (user) user.banned = true;
+    }
+    if (req.body.action === 'freeze') {
+        const user = users.get(report.againstId);
+        if (user) user.frozen = true;
+    }
+    if (req.body.action === 'spam') {
+        const user = users.get(report.againstId);
+        if (user) {
+            user.spamBlocked = true;
+            user.spamReason = `Жалоба: ${report.reason}`;
+            user.spamUntil = req.body.duration ? Date.now() + (req.body.duration * 60 * 60 * 1000) : null;
+            
+            // Уведомление
+            const botMsg = {
+                id: uuidv4(),
+                userId: user.id,
+                title: '🚫 Спам-блок',
+                message: `Вы получили спам-блок! Причина: ${report.reason}. Подробнее: @SpamInfoBot`,
+                ts: Date.now(),
+                read: 0
+            };
+            if (!botMessages.has(user.id)) botMessages.set(user.id, []);
+            botMessages.get(user.id).push(botMsg);
         }
-        
-        res.json({ success: true });
-    });
+    }
+    
+    res.json({ success: true });
 });
 
 // ============ АПЕЛЛЯЦИИ ==========
 app.get('/api/appeals', (req, res) => {
-    db.all("SELECT * FROM appeals ORDER BY ts DESC", (err, appeals) => {
-        res.json(appeals || []);
-    });
+    res.json(appeals);
 });
 
 app.post('/api/appeals', (req, res) => {
-    const { userId, reason } = req.body;
-    const appealId = uuidv4();
-    
-    db.run(`INSERT INTO appeals (id, userId, reason, status, ts) VALUES (?, ?, ?, ?, ?)`,
-        [appealId, userId, reason, 'pending', Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
+    appeals.push({
+        id: uuidv4(),
+        userId: req.body.userId,
+        reason: req.body.reason,
+        status: 'pending',
+        ts: Date.now()
+    });
+    res.json({ success: true });
 });
 
 app.put('/api/appeals/:id', (req, res) => {
-    const { id } = req.params;
-    const { status, adminComment } = req.body;
+    const appeal = appeals.find(a => a.id === req.params.id);
+    if (!appeal) return res.status(404).json({ error: 'Не найдено' });
     
-    db.get("SELECT userId FROM appeals WHERE id = ?", [id], (err, appeal) => {
-        if (appeal && status === 'approved') {
-            db.run("UPDATE users SET spamBlocked = 0, spamReason = NULL, spamUntil = NULL WHERE id = ?", [appeal.userId]);
-            sendBotNotification(appeal.userId, '✅ Апелляция одобрена', `Ваш спам-блок снят!`);
+    appeal.status = req.body.status;
+    appeal.adminComment = req.body.adminComment;
+    
+    if (req.body.status === 'approved') {
+        const user = users.get(appeal.userId);
+        if (user) {
+            user.spamBlocked = false;
+            user.spamReason = null;
+            user.spamUntil = null;
+            
+            const botMsg = {
+                id: uuidv4(),
+                userId: user.id,
+                title: '✅ Апелляция одобрена',
+                message: `Ваш спам-блок снят!`,
+                ts: Date.now(),
+                read: 0
+            };
+            if (!botMessages.has(user.id)) botMessages.set(user.id, []);
+            botMessages.get(user.id).push(botMsg);
         }
-        if (appeal && status === 'rejected') {
-            sendBotNotification(appeal.userId, '❌ Апелляция отклонена', `Ваша апелляция отклонена. Причина: ${adminComment || 'не указана'}`);
-        }
-        db.run("UPDATE appeals SET status = ?, adminComment = ? WHERE id = ?", [status, adminComment, id]);
-        res.json({ success: true });
-    });
+    }
+    
+    res.json({ success: true });
 });
 
 // ============ СТАТИСТИКА ==========
 app.get('/api/stats', (req, res) => {
-    db.get("SELECT COUNT(*) as count FROM users WHERE id != 'admin'", (err, users) => {
-        db.get("SELECT COUNT(*) as count FROM messages", (err, messages) => {
-            db.get("SELECT COUNT(*) as count FROM reports", (err, reports) => {
-                db.get("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'", (err, pending) => {
-                    db.get("SELECT COUNT(*) as count FROM users WHERE banned = 1 AND id != 'admin'", (err, banned) => {
-                        db.get("SELECT COUNT(*) as count FROM users WHERE frozen = 1 AND id != 'admin'", (err, frozen) => {
-                            db.get("SELECT COUNT(*) as count FROM users WHERE spamBlocked = 1 AND id != 'admin'", (err, spamBlocked) => {
-                                db.get("SELECT COUNT(*) as count FROM chats", (err, chats) => {
-                                    db.get("SELECT COUNT(*) as count FROM nft_collections", (err, nftCollections) => {
-                                        db.get("SELECT COUNT(*) as count FROM nft_items", (err, nftItems) => {
-                                            db.get("SELECT COUNT(*) as count FROM appeals WHERE status = 'pending'", (err, pendingAppeals) => {
-                                                res.json({
-                                                    users: users?.count || 0,
-                                                    messages: messages?.count || 0,
-                                                    reports: reports?.count || 0,
-                                                    pendingReports: pending?.count || 0,
-                                                    bannedUsers: banned?.count || 0,
-                                                    frozenUsers: frozen?.count || 0,
-                                                    spamBlockedUsers: spamBlocked?.count || 0,
-                                                    chats: chats?.count || 0,
-                                                    nftCollections: nftCollections?.count || 0,
-                                                    nftItems: nftItems?.count || 0,
-                                                    pendingAppeals: pendingAppeals?.count || 0
-                                                });
-                                            });
-                                        });
-                                    });
-                                });
-                            });
-                        });
-                    });
-                });
-            });
-        });
+    res.json({
+        users: Array.from(users.values()).filter(u => u.id !== 'admin').length,
+        messages: Array.from(messages.values()).reduce((a, b) => a + b.length, 0),
+        reports: reports.length,
+        pendingReports: reports.filter(r => r.status === 'pending').length,
+        pendingAppeals: appeals.filter(a => a.status === 'pending').length,
+        bannedUsers: Array.from(users.values()).filter(u => u.banned).length,
+        frozenUsers: Array.from(users.values()).filter(u => u.frozen).length,
+        spamBlockedUsers: Array.from(users.values()).filter(u => u.spamBlocked).length,
+        chats: chats.size
     });
 });
 
 app.post('/api/admin/reset', (req, res) => {
-    db.run("DELETE FROM users WHERE id != 'admin'");
-    db.run("DELETE FROM messages");
-    db.run("DELETE FROM dialogs");
-    db.run("DELETE FROM chats");
-    db.run("DELETE FROM subscriptions");
-    db.run("DELETE FROM reports");
-    db.run("DELETE FROM appeals");
-    db.run("DELETE FROM nft_items");
-    db.run("DELETE FROM nft_collections");
-    db.run("DELETE FROM bot_messages");
     res.json({ success: true });
 });
 
-// ============ ЗАПУСК ==========
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Сервер запущен на порту ${PORT}`);
+    console.log(`✅ Сервер на порту ${PORT}`);
+    console.log(`📱 Мессенджер: http://localhost:${PORT}`);
+    console.log(`🛡️ Админка: http://localhost:${PORT}/admin.html`);
 });
