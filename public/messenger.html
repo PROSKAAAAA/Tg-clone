@@ -18,6 +18,7 @@
         input{width:100%;padding:12px;margin-bottom:12px;border-radius:12px;border:none;background:#0e1621;color:#fff}
         button{background:#2b88d8;border:none;padding:12px;border-radius:12px;color:#fff;font-weight:600;cursor:pointer}
         .error-msg{color:#e05c65;margin-top:12px;text-align:center;font-size:13px}
+        .success-msg{color:#4dba87}
         
         /* App Layout */
         .app{display:flex;height:100vh}
@@ -86,8 +87,16 @@
         
         .empty-state{flex:1;display:flex;align-items:center;justify-content:center;color:#aaa;flex-direction:column;gap:12px}
         .gift-card{background:#232e3c;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+        .gift-card:hover{background:#2b5278}
+        .nft-item{background:#232e3c;border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer}
+        .nft-item.selected{background:#2b5278;border:1px solid #5ac8fa}
         
         @media (max-width:768px){.sidebar{display:none}.main{width:100%}}
+        
+        .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;margin-left:8px}
+        .badge-rare{background:#2b88d8}
+        .badge-epic{background:#a55eea}
+        .badge-legendary{background:#f5a623}
     </style>
 </head>
 <body>
@@ -138,6 +147,7 @@
             <div class="chat-header-info" id="chatInfo">
                 <div class="chat-header-name" id="chatName"></div>
             </div>
+            <button class="menu-btn" id="reportBtn" style="background:none;width:36px;height:36px" title="Пожаловаться">🚨</button>
         </div>
         <div id="emptyState" class="empty-state">
             <div>💬</div>
@@ -167,7 +177,10 @@
         <span>👤</span> Мой профиль
     </div>
     <div class="drawer-item" id="drawerGifts">
-        <span>🎁</span> Подарки
+        <span>🎁</span> Мои NFT
+    </div>
+    <div class="drawer-item" id="drawerShop">
+        <span>🏪</span> Магазин подарков
     </div>
     <div class="drawer-item" id="drawerLogout">
         <span>🚪</span> Выйти
@@ -182,11 +195,30 @@
     </div>
 </div>
 
-<!-- Gifts Modal -->
+<!-- Gifts Modal (Магазин NFT) -->
 <div id="giftsModal" class="modal-overlay">
     <div class="modal">
-        <div class="modal-header"><h3>🎁 Магазин подарков</h3><button class="modal-close" onclick="closeModal('giftsModal')">✕</button></div>
+        <div class="modal-header"><h3>🏪 Магазин подарков</h3><button class="modal-close" onclick="closeModal('giftsModal')">✕</button></div>
         <div class="modal-body" id="giftsBody"></div>
+    </div>
+</div>
+
+<!-- My NFTs Modal -->
+<div id="myNftsModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header"><h3>🎁 Мои NFT</h3><button class="modal-close" onclick="closeModal('myNftsModal')">✕</button></div>
+        <div class="modal-body" id="myNftsBody"></div>
+    </div>
+</div>
+
+<!-- NFT Info Modal -->
+<div id="nftInfoModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header"><h3>Информация о NFT</h3><button class="modal-close" onclick="closeModal('nftInfoModal')">✕</button></div>
+        <div class="modal-body" id="nftInfoBody"></div>
+        <div class="modal-footer">
+            <button onclick="closeModal('nftInfoModal')">Закрыть</button>
+        </div>
     </div>
 </div>
 
@@ -195,8 +227,20 @@
     <div class="modal">
         <div class="modal-header"><h3>Новый чат</h3><button class="modal-close" onclick="closeModal('newChatModal')">✕</button></div>
         <div class="modal-body">
-            <input type="text" id="newChatSearch" placeholder="Введите имя пользователя..." style="width:100%;margin-bottom:12px">
-            <div id="searchUsersResult"></div>
+            <div style="margin-bottom:16px"><button onclick="showNewChatSection('user')" style="width:48%;margin-right:4%">👤 Личный чат</button><button onclick="showNewChatSection('channel')" style="width:48%">📢 Канал</button></div>
+            <div id="newChatSection"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Report Modal -->
+<div id="reportModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header"><h3>🚨 Пожаловаться</h3><button class="modal-close" onclick="closeModal('reportModal')">✕</button></div>
+        <div class="modal-body" id="reportBody"></div>
+        <div class="modal-footer">
+            <button onclick="closeModal('reportModal')">Отмена</button>
+            <button id="reportSubmitBtn" style="background:#ff4757">Отправить</button>
         </div>
     </div>
 </div>
@@ -204,29 +248,31 @@
 <script>
     const API_URL = '';
     let currentUser = null;
-    let currentChatUser = null;
+    let currentChat = null;
     let allUsers = [];
     let dialogs = [];
-    let giftsList = [];
+    let chats = [];
+    let collections = [];
+    let myNFTs = [];
     let pollInterval = null;
 
-    // ============ AUTH ============
+    // ============ AUTH ==========
     document.getElementById('loginTab').onclick = () => { document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; document.getElementById('loginTab').classList.add('active'); document.getElementById('registerTab').classList.remove('active'); };
     document.getElementById('registerTab').onclick = () => { document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; document.getElementById('registerTab').classList.add('active'); document.getElementById('loginTab').classList.remove('active'); };
     document.getElementById('doLogin').onclick = login;
     document.getElementById('doRegister').onclick = register;
     document.getElementById('sendBtn').onclick = sendMessage;
-    document.getElementById('newChatBtn').onclick = () => openModal('newChatModal');
+    document.getElementById('newChatBtn').onclick = openNewChatModal;
     document.getElementById('openMenuBtn').onclick = openDrawer;
     document.getElementById('drawerOverlay').onclick = closeDrawer;
     document.getElementById('drawerProfile').onclick = () => { closeDrawer(); openMyProfile(); };
-    document.getElementById('drawerGifts').onclick = () => { closeDrawer(); openGifts(); };
+    document.getElementById('drawerGifts').onclick = () => { closeDrawer(); openMyNFTs(); };
+    document.getElementById('drawerShop').onclick = () => { closeDrawer(); openShop(); };
     document.getElementById('drawerLogout').onclick = logout;
     document.getElementById('myInfo').onclick = () => openMyProfile();
-    
+    document.getElementById('reportBtn').onclick = openReportModal;
     document.getElementById('msgInput').addEventListener('keypress', (e) => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); } });
     document.getElementById('searchInput').addEventListener('input', renderChatList);
-    document.getElementById('newChatSearch').addEventListener('input', searchUsers);
     
     async function login() {
         const username = document.getElementById('loginUsername').value.trim();
@@ -292,76 +338,94 @@
         document.getElementById('drawerAvatar').textContent = currentUser.name[0].toUpperCase();
     }
     
-    // ============ DATA ============
     async function loadData() {
-        const [usersRes, dialogsRes, giftsRes] = await Promise.all([
+        const [usersRes, dialogsRes, chatsRes, collectionsRes, myNftsRes] = await Promise.all([
             fetch(`${API_URL}/api/users`),
             fetch(`${API_URL}/api/dialogs/${currentUser.id}`),
-            fetch(`${API_URL}/api/gifts`)
+            fetch(`${API_URL}/api/my/chats/${currentUser.id}`),
+            fetch(`${API_URL}/api/nft/collections`),
+            fetch(`${API_URL}/api/nft/user/${currentUser.id}`)
         ]);
         allUsers = await usersRes.json();
         dialogs = await dialogsRes.json();
-        giftsList = await giftsRes.json();
+        chats = await chatsRes.json();
+        collections = await collectionsRes.json();
+        myNFTs = await myNftsRes.json();
         renderChatList();
     }
     
     function renderChatList() {
-        // Собираем чаты из диалогов
-        const chats = [];
+        const personalChats = [];
         for(const dialog of dialogs) {
             const otherId = dialog.user1 === currentUser.id ? dialog.user2 : dialog.user1;
             const user = allUsers.find(u => u.id === otherId);
-            if(user) chats.push({ id: user.id, name: user.name, username: user.username, avatar: user.name[0], lastMessage: dialog.lastMessage, lastMessageTime: dialog.lastMessageTime });
+            if(user) personalChats.push({ type: 'user', id: user.id, name: user.name, avatar: user.name[0], lastMessage: dialog.lastMessage });
         }
+        const groupChats = chats.map(c => ({ type: c.type, id: c.id, name: c.title, avatar: c.type === 'channel' ? '📢' : '👥', lastMessage: null }));
+        const allChats = [...personalChats, ...groupChats];
         
         const search = document.getElementById('searchInput').value.toLowerCase();
-        const filtered = search ? chats.filter(c => c.name.toLowerCase().includes(search) || c.username.toLowerCase().includes(search)) : chats;
+        const filtered = search ? allChats.filter(c => c.name.toLowerCase().includes(search)) : allChats;
         
         const chatList = document.getElementById('chatList');
         if(filtered.length === 0) { chatList.innerHTML = '<div style="padding:40px;text-align:center;color:#aaa">Нет чатов<br>Нажмите ✏️ чтобы начать</div>'; return; }
         
         chatList.innerHTML = filtered.map(chat => `
-            <div class="chat-item" onclick="openChat('${chat.id}')">
+            <div class="chat-item" onclick="openChat('${chat.type}', '${chat.id}')">
                 <div class="chat-avatar">${chat.avatar}</div>
                 <div class="chat-info">
                     <div class="chat-name">${escapeHtml(chat.name)}</div>
-                    <div class="chat-preview">${escapeHtml(chat.lastMessage || 'Напишите сообщение...')}</div>
+                    <div class="chat-preview">${chat.lastMessage ? escapeHtml(chat.lastMessage) : (chat.type === 'channel' ? 'Канал' : 'Группа')}</div>
                 </div>
             </div>
         `).join('');
     }
     
-    window.openChat = async function(userId) {
-        currentChatUser = allUsers.find(u => u.id === userId);
-        if(!currentChatUser) return;
+    window.openChat = async function(type, id) {
+        if(type === 'user') {
+            const user = allUsers.find(u => u.id === id);
+            currentChat = { type: 'user', id: id, name: user.name };
+            await fetch(`${API_URL}/api/dialogs`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ user1: currentUser.id, user2: id })
+            });
+        } else {
+            const chat = chats.find(c => c.id === id);
+            currentChat = { type: type, id: id, name: chat.title };
+            await fetch(`${API_URL}/api/chats/${id}/join`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ userId: currentUser.id })
+            });
+        }
         
-        // Создаём диалог если нет
-        await fetch(`${API_URL}/api/dialogs`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ user1: currentUser.id, user2: userId })
-        });
-        
-        document.getElementById('chatName').textContent = currentChatUser.name;
-        document.getElementById('chatAvatar').textContent = currentChatUser.name[0];
+        document.getElementById('chatName').textContent = currentChat.name;
+        document.getElementById('chatAvatar').textContent = currentChat.name[0];
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('chatView').style.display = 'flex';
         document.getElementById('chatHeader').style.display = 'flex';
-        document.getElementById('chatInfo').onclick = () => openUserProfile(currentChatUser.id);
         await loadMessages();
     };
     
     async function loadMessages() {
-        if(!currentChatUser) return;
-        const res = await fetch(`${API_URL}/api/messages/${currentChatUser.id}?currentUserId=${currentUser.id}`);
+        if(!currentChat) return;
+        let url;
+        if(currentChat.type === 'user') {
+            url = `${API_URL}/api/messages/${currentChat.id}?currentUserId=${currentUser.id}`;
+        } else {
+            url = `${API_URL}/api/chats/${currentChat.id}/messages`;
+        }
+        const res = await fetch(url);
         const msgs = await res.json();
         const container = document.getElementById('messages');
         if(msgs.length === 0) { container.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px">Напишите первое сообщение</div>'; return; }
         container.innerHTML = msgs.map(msg => {
             const isOut = msg.fromUserId === currentUser.id;
+            const sender = allUsers.find(u => u.id === msg.fromUserId);
             return `
                 <div class="message ${isOut ? 'out' : 'in'}">
                     <div class="msg-bubble">
-                        ${msg.type === 'gift' ? `🎁 ${escapeHtml(msg.text)}` : escapeHtml(msg.text)}
+                        ${!isOut && currentChat.type !== 'user' ? `<div style="font-size:11px;color:#5ac8fa;margin-bottom:4px">${sender ? escapeHtml(sender.name) : '?'}</div>` : ''}
+                        ${msg.type === 'gift' ? `🎁 ${escapeHtml(msg.text)}` : escapeHtml(msg.text || msg.type)}
                         <div class="msg-meta">${new Date(msg.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
                     </div>
                 </div>
@@ -373,17 +437,92 @@
     async function sendMessage() {
         const input = document.getElementById('msgInput');
         const text = input.value.trim();
-        if(!text || !currentChatUser) return;
-        await fetch(`${API_URL}/api/messages`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ from: currentUser.id, to: currentChatUser.id, type: 'text', text })
-        });
+        if(!text || !currentChat) return;
+        
+        if(currentChat.type === 'user') {
+            await fetch(`${API_URL}/api/messages`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ from: currentUser.id, to: currentChat.id, type: 'text', text })
+            });
+        } else {
+            await fetch(`${API_URL}/api/chats/${currentChat.id}/messages`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ fromUserId: currentUser.id, type: 'text', text })
+            });
+        }
         input.value = '';
         await loadMessages();
         await loadData();
     }
     
-    // ============ PROFILE ============
+    // ============ НОВЫЙ ЧАТ / КАНАЛ / ГРУППА ==========
+    function openNewChatModal() {
+        document.getElementById('newChatSection').innerHTML = `
+            <div id="userSearchSection">
+                <input type="text" id="userSearchInput" placeholder="Поиск пользователей..." style="margin-bottom:12px">
+                <div id="userSearchResults"></div>
+            </div>
+        `;
+        openModal('newChatModal');
+        document.getElementById('userSearchInput').addEventListener('input', searchUsers);
+    }
+    
+    function showNewChatSection(type) {
+        if(type === 'user') {
+            document.getElementById('newChatSection').innerHTML = `
+                <div id="userSearchSection">
+                    <input type="text" id="userSearchInput" placeholder="Поиск пользователей..." style="margin-bottom:12px">
+                    <div id="userSearchResults"></div>
+                </div>
+            `;
+            document.getElementById('userSearchInput').addEventListener('input', searchUsers);
+        } else if(type === 'channel') {
+            document.getElementById('newChatSection').innerHTML = `
+                <div>
+                    <input type="text" id="channelTitle" placeholder="Название канала" style="margin-bottom:12px">
+                    <input type="text" id="channelDesc" placeholder="Описание" style="margin-bottom:12px">
+                    <button onclick="createChannel()">Создать канал</button>
+                </div>
+            `;
+        }
+    }
+    
+    async function searchUsers() {
+        const query = document.getElementById('userSearchInput').value.toLowerCase();
+        if(query.length < 2) { document.getElementById('userSearchResults').innerHTML = ''; return; }
+        const users = allUsers.filter(u => u.id !== currentUser.id && (u.name.toLowerCase().includes(query) || u.username.toLowerCase().includes(query)));
+        document.getElementById('userSearchResults').innerHTML = users.map(u => `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:#232e3c;border-radius:12px;margin-bottom:8px;cursor:pointer" onclick="startPrivateChat('${u.id}')">
+                <div style="width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center">${u.name[0]}</div>
+                <div><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></div>
+            </div>
+        `).join('') || '<div style="color:#aaa;padding:12px">Ничего не найдено</div>';
+    }
+    
+    window.startPrivateChat = async function(userId) {
+        await fetch(`${API_URL}/api/dialogs`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ user1: currentUser.id, user2: userId })
+        });
+        closeModal('newChatModal');
+        await loadData();
+        openChat('user', userId);
+    };
+    
+    window.createChannel = async function() {
+        const title = document.getElementById('channelTitle').value;
+        const desc = document.getElementById('channelDesc').value;
+        if(!title) { showToast('Введите название'); return; }
+        await fetch(`${API_URL}/api/chats`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ type: 'channel', title, description: desc, creatorId: currentUser.id })
+        });
+        closeModal('newChatModal');
+        await loadData();
+        showToast('Канал создан');
+    };
+    
+    // ============ ПРОФИЛЬ ==========
     async function openMyProfile() {
         const body = document.getElementById('profileBody');
         body.innerHTML = `
@@ -394,26 +533,39 @@
                 <div style="margin-top:8px;color:#f5a623">⭐ ${currentUser.stars}</div>
                 ${currentUser.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(currentUser.bio)}</div>` : ''}
             </div>
-            <button onclick="editMyProfile()" style="width:100%">✏️ Редактировать</button>
+            <div style="margin-bottom:12px"><strong>🎁 Выбранный NFT в профиле:</strong></div>
+            <div id="selectedGiftDisplay"></div>
+            <button onclick="editMyProfile()" style="width:100%;margin-top:12px">✏️ Редактировать</button>
+            <button onclick="selectGiftForProfile()" style="width:100%;margin-top:8px;background:#2b5278">🎁 Выбрать NFT для профиля</button>
         `;
+        await loadMyNFTsForProfile();
         openModal('profileModal');
     }
     
-    window.openUserProfile = async function(userId) {
-        const res = await fetch(`${API_URL}/api/users/${userId}`);
-        const user = await res.json();
-        const body = document.getElementById('profileBody');
-        body.innerHTML = `
-            <div style="text-align:center;margin-bottom:20px">
-                <div style="width:80px;height:80px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px">${user.name[0]}</div>
-                <div style="font-size:20px;font-weight:600">${escapeHtml(user.name)}</div>
-                <div style="color:#aaa">@${escapeHtml(user.username)}</div>
-                <div style="margin-top:8px;color:#f5a623">⭐ ${user.stars}</div>
-                ${user.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(user.bio)}</div>` : ''}
+    async function loadMyNFTsForProfile() {
+        const res = await fetch(`${API_URL}/api/nft/user/${currentUser.id}`);
+        const nfts = await res.json();
+        const selectedId = currentUser.selectedGift;
+        const container = document.getElementById('selectedGiftDisplay');
+        if(nfts.length === 0) { container.innerHTML = '<div style="color:#aaa">У вас нет NFT</div>'; return; }
+        container.innerHTML = nfts.map(n => `
+            <div class="nft-item ${selectedId === n.id ? 'selected' : ''}" onclick="selectGift('${n.id}')">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div><span style="font-size:24px">${n.emoji}</span> ${n.collectionName} #${n.serialNumber} ${n.isUpgraded ? '✨' : ''}</div>
+                    ${selectedId === n.id ? '<span style="color:#5ac8fa">✅ Выбран</span>' : ''}
+                </div>
             </div>
-            <button onclick="closeModal('profileModal')" style="width:100%">Закрыть</button>
-        `;
-        openModal('profileModal');
+        `).join('');
+    }
+    
+    window.selectGift = async function(itemId) {
+        await fetch(`${API_URL}/api/nft/select`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ userId: currentUser.id, itemId })
+        });
+        currentUser.selectedGift = itemId;
+        showToast('NFT выбран для профиля');
+        loadMyNFTsForProfile();
     };
     
     function editMyProfile() {
@@ -434,80 +586,169 @@
         }
     }
     
-    // ============ GIFTS ============
-    async function openGifts() {
-        const res = await fetch(`${API_URL}/api/gifts`);
-        const gifts = await res.json();
-        const body = document.getElementById('giftsBody');
+    window.openUserProfile = async function(userId) {
+        const res = await fetch(`${API_URL}/api/users/${userId}`);
+        const user = await res.json();
+        let selectedGiftHtml = '';
+        if(user.selectedGift) {
+            const giftRes = await fetch(`${API_URL}/api/nft/item/${user.selectedGift}`);
+            const gift = await giftRes.json();
+            if(gift) {
+                selectedGiftHtml = `
+                    <div style="margin-top:16px;padding:12px;background:#232e3c;border-radius:12px;cursor:pointer" onclick="openNFTInfo('${user.selectedGift}')">
+                        <div style="display:flex;align-items:center;gap:12px">
+                            <span style="font-size:32px">${gift.emoji}</span>
+                            <div><strong>${gift.collectionName} #${gift.serialNumber}</strong><br><span style="font-size:12px;color:#aaa">Нажмите для информации</span></div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        const body = document.getElementById('profileBody');
         body.innerHTML = `
-            <div style="margin-bottom:12px;text-align:center">⭐ Ваш баланс: ${currentUser.stars}</div>
-            ${gifts.map(g => `
-                <div class="gift-card" onclick="buyGift('${g.id}', '${currentChatUser ? currentChatUser.id : ''}')">
-                    <div><span style="font-size:28px">${g.emoji}</span> ${g.name}</div>
-                    <div>⭐ ${g.price}</div>
-                </div>
-            `).join('')}
-            ${!currentChatUser ? '<div style="color:#aaa;text-align:center;margin-top:12px">Сначала выберите чат, чтобы отправить подарок</div>' : ''}
+            <div style="text-align:center;margin-bottom:20px">
+                <div style="width:80px;height:80px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px">${user.name[0]}</div>
+                <div style="font-size:20px;font-weight:600">${escapeHtml(user.name)}</div>
+                <div style="color:#aaa">@${escapeHtml(user.username)}</div>
+                <div style="margin-top:8px;color:#f5a623">⭐ ${user.stars}</div>
+                ${user.bio ? `<div style="margin-top:12px;padding:12px;background:#0e1621;border-radius:12px">${escapeHtml(user.bio)}</div>` : ''}
+                ${selectedGiftHtml}
+            </div>
+            <button onclick="closeModal('profileModal')" style="width:100%">Закрыть</button>
         `;
-        openModal('giftsModal');
-    }
+        openModal('profileModal');
+    };
     
-    window.buyGift = async function(giftId, toUserId) {
-        if(!toUserId) { showToast('Сначала выберите чат'); closeModal('giftsModal'); return; }
-        const res = await fetch(`${API_URL}/api/gifts/buy`, {
+    // ============ NFT ИНФО ==========
+    window.openNFTInfo = async function(itemId) {
+        const res = await fetch(`${API_URL}/api/nft/item/${itemId}`);
+        const nft = await res.json();
+        let backgroundInfo = '';
+        if(nft.selectedBackground) {
+            const bg = JSON.parse(nft.selectedBackground);
+            backgroundInfo = `<div><strong>🎨 Фон:</strong> ${bg.name || bg.value} (шанс: ${bg.probability}%)</div>`;
+        }
+        const body = document.getElementById('nftInfoBody');
+        body.innerHTML = `
+            <div style="text-align:center;margin-bottom:16px">
+                <span style="font-size:64px">${nft.emoji}</span>
+                <div style="font-size:18px;font-weight:600;margin-top:8px">${nft.collectionName}</div>
+                <div class="badge ${nft.rarity === 'rare' ? 'badge-rare' : (nft.rarity === 'epic' ? 'badge-epic' : (nft.rarity === 'legendary' ? 'badge-legendary' : ''))}">${nft.rarity}</div>
+            </div>
+            <div style="background:#0e1621;border-radius:12px;padding:12px;margin-bottom:12px">
+                <div><strong>🔢 Серийный номер:</strong> #${nft.serialNumber}</div>
+                <div><strong>💰 Цена покупки:</strong> ⭐ ${nft.price}</div>
+                ${nft.isUpgraded ? `<div><strong>✨ Улучшен:</strong> Да</div><div><strong>💰 Цена улучшения:</strong> ⭐ ${nft.upgradePrice}</div>` : `<div><strong>✨ Улучшен:</strong> Нет</div>`}
+                ${backgroundInfo}
+                ${nft.fileUrl ? `<div><strong>📎 Модель:</strong> <a href="${nft.fileUrl}" target="_blank" style="color:#5ac8fa">Ссылка</a></div>` : ''}
+                ${nft.isUpgraded && nft.upgradedModelUrl ? `<div><strong>📎 Улучшенная модель:</strong> <a href="${nft.upgradedModelUrl}" target="_blank" style="color:#5ac8fa">Ссылка</a></div>` : ''}
+            </div>
+            ${!nft.isUpgraded && nft.upgradePrice > 0 && nft.ownerId === currentUser.id ? `<button onclick="upgradeNFT('${nft.id}')" style="width:100%">✨ Улучшить за ${nft.upgradePrice} ⭐</button>` : ''}
+        `;
+        openModal('nftInfoModal');
+    };
+    
+    async function upgradeNFT(itemId) {
+        const res = await fetch(`${API_URL}/api/nft/upgrade`, {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ userId: currentUser.id, giftId, toUserId })
+            body:JSON.stringify({ userId: currentUser.id, itemId })
         });
         const data = await res.json();
         if(data.success) {
             currentUser.stars = data.stars;
             updateUserUI();
-            showToast('Подарок отправлен!');
-            closeModal('giftsModal');
-            await loadMessages();
-            await loadData();
+            showToast(`Улучшено! ${data.gift.background?.name || 'Новый фон'} получен`);
+            closeModal('nftInfoModal');
+            loadData();
         } else { showToast(data.error); }
-    };
-    
-    // ============ NEW CHAT ============
-    async function searchUsers() {
-        const query = document.getElementById('newChatSearch').value.toLowerCase();
-        if(query.length < 2) { document.getElementById('searchUsersResult').innerHTML = ''; return; }
-        const users = allUsers.filter(u => u.id !== currentUser.id && (u.name.toLowerCase().includes(query) || u.username.toLowerCase().includes(query)));
-        document.getElementById('searchUsersResult').innerHTML = users.map(u => `
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:#232e3c;border-radius:12px;margin-bottom:8px;cursor:pointer" onclick="startNewChat('${u.id}')">
-                <div style="width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center">${u.name[0]}</div>
-                <div><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></div>
-            </div>
-        `).join('') || '<div style="color:#aaa;padding:12px">Ничего не найдено</div>';
     }
     
-    window.startNewChat = async function(userId) {
-        await fetch(`${API_URL}/api/dialogs`, {
+    // ============ МАГАЗИН NFT ==========
+    async function openShop() {
+        const res = await fetch(`${API_URL}/api/nft/collections`);
+        const collections = await res.json();
+        const body = document.getElementById('giftsBody');
+        body.innerHTML = collections.map(c => `
+            <div class="gift-card" onclick="buyNFT('${c.id}')">
+                <div><span style="font-size:32px">${c.emoji}</span> ${c.name}<br><span style="font-size:12px;color:#aaa">Осталось: ${c.maxSupply - c.minted} из ${c.maxSupply || '∞'}</span></div>
+                <div>⭐ ${c.price}</div>
+            </div>
+        `).join('') || '<div style="text-align:center;color:#aaa">Нет подарков</div>';
+        openModal('giftsModal');
+    }
+    
+    async function buyNFT(collectionId) {
+        const res = await fetch(`${API_URL}/api/nft/buy`, {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ user1: currentUser.id, user2: userId })
+            body:JSON.stringify({ userId: currentUser.id, collectionId })
         });
-        closeModal('newChatModal');
-        await loadData();
-        openChat(userId);
-    };
+        const data = await res.json();
+        if(data.success) {
+            currentUser.stars = data.stars;
+            updateUserUI();
+            showToast(`Вы получили ${data.gift.name} #${data.gift.serialNumber}! ${data.gift.background?.name ? `Фон: ${data.gift.background.name}` : ''}`);
+            closeModal('giftsModal');
+            loadData();
+        } else { showToast(data.error); }
+    }
     
-    // ============ MENU ============
-    function openDrawer() { document.getElementById('drawer').classList.add('open'); document.getElementById('drawerOverlay').style.display = 'block'; }
-    function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerOverlay').style.display = 'none'; }
+    // ============ МОИ NFT ==========
+    async function openMyNFTs() {
+        const res = await fetch(`${API_URL}/api/nft/user/${currentUser.id}`);
+        const nfts = await res.json();
+        const body = document.getElementById('myNftsBody');
+        body.innerHTML = nfts.map(n => `
+            <div class="gift-card" onclick="openNFTInfo('${n.id}')">
+                <div><span style="font-size:32px">${n.emoji}</span> ${n.collectionName} #${n.serialNumber} ${n.isUpgraded ? '✨' : ''}</div>
+                <div>⭐ ${n.isUpgraded ? 'Улучшен' : 'Обычный'}</div>
+            </div>
+        `).join('') || '<div style="text-align:center;color:#aaa">У вас нет NFT</div>';
+        openModal('myNftsModal');
+    }
     
-    // ============ UTILS ============
+    // ============ ЖАЛОБЫ ==========
+    function openReportModal() {
+        if(!currentChat || currentChat.type !== 'user') { showToast('Пожаловаться можно только на пользователя'); return; }
+        document.getElementById('reportBody').innerHTML = `
+            <select id="reportReason" style="margin-bottom:12px">
+                <option value="spam">📢 Спам</option>
+                <option value="violence">⚠️ Насилие</option>
+                <option value="fake">🎭 Фейковый аккаунт</option>
+                <option value="scam">💸 Мошенничество</option>
+                <option value="insult">🤬 Оскорбления</option>
+            </select>
+            <textarea id="reportComment" placeholder="Дополнительная информация..." rows="3" style="width:100%;background:#0e1621;border:1px solid #293d4f;border-radius:12px;padding:12px;color:#fff"></textarea>
+        `;
+        document.getElementById('reportSubmitBtn').onclick = async () => {
+            const reason = document.getElementById('reportReason').value;
+            const comment = document.getElementById('reportComment').value;
+            await fetch(`${API_URL}/api/reports`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({ from: currentUser.id, against: currentChat.id, reason, comment })
+            });
+            showToast('Жалоба отправлена');
+            closeModal('reportModal');
+        };
+        openModal('reportModal');
+    }
+    
+    // ============ ВЫХОД ==========
     function logout() { currentUser = null; if(pollInterval) clearInterval(pollInterval); location.reload(); }
-    function startPolling() { pollInterval = setInterval(() => { if(currentChatUser) loadMessages(); loadData(); }, 3000); }
+    
+    function startPolling() { pollInterval = setInterval(() => { if(currentChat) loadMessages(); loadData(); }, 3000); }
+    
     function openModal(id) { document.getElementById(id).classList.add('active'); }
     function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function openDrawer() { document.getElementById('drawer').classList.add('open'); document.getElementById('drawerOverlay').style.display = 'block'; }
+    function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerOverlay').style.display = 'none'; }
     function escapeHtml(str) { return String(str||'').replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
     
+    window.openModal = openModal;
     window.closeModal = closeModal;
+    window.openChat = openChat;
     window.openUserProfile = openUserProfile;
-    window.openGifts = openGifts;
-    window.buyGift = buyGift;
-    window.startNewChat = startNewChat;
+    window.openNFTInfo = openNFTInfo;
+    window.selectGift = selectGift;
 </script>
 </body>
 </html>
