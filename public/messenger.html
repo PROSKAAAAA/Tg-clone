@@ -8,7 +8,6 @@
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui;background:#0e1621;color:#fff;height:100vh}
         
-        /* АВТОРИЗАЦИЯ */
         .auth{position:fixed;inset:0;background:#0e1621;display:flex;align-items:center;justify-content:center;z-index:100}
         .auth-box{background:#17212b;border-radius:28px;padding:40px;width:400px}
         .auth-box h2{text-align:center;margin-bottom:24px}
@@ -18,27 +17,25 @@
         input{width:100%;padding:12px;margin-bottom:12px;border-radius:12px;border:none;background:#0e1621;color:#fff}
         button{background:#2b88d8;border:none;padding:12px;border-radius:12px;color:#fff;cursor:pointer}
         
-        /* ОСНОВНОЙ ИНТЕРФЕЙС */
         .app{display:flex;height:100vh}
         .sidebar{width:320px;background:#17212b;border-right:1px solid #293d4f;display:flex;flex-direction:column}
         .main{flex:1;display:flex;flex-direction:column}
         
-        /* ШАПКА */
         .header{padding:12px 16px;border-bottom:1px solid #293d4f;display:flex;align-items:center;gap:12px}
         .avatar{width:48px;height:48px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:20px}
         .avatar-small{width:44px;height:44px;border-radius:50%;background:#2b88d8;display:flex;align-items:center;justify-content:center;font-size:18px}
+        .bot-avatar{background:#a55eea}
+        .verified-badge{position:relative}
+        .verified-badge::after{content:"✅";position:absolute;bottom:-2px;right:-2px;font-size:12px;background:#0e1621;border-radius:50%}
         
-        /* ПОИСК */
         .search{padding:8px 16px}
         .search input{width:100%;background:#232e3c;border:none;border-radius:22px;padding:10px 16px}
         
-        /* СПИСОК ЧАТОВ */
         .chat-list{flex:1;overflow-y:auto}
         .chat-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer}
         .chat-item:hover{background:#232e3c}
         .chat-name{font-size:15px;font-weight:500}
         
-        /* СООБЩЕНИЯ */
         .messages{flex:1;overflow-y:auto;padding:16px}
         .message{display:flex;margin-bottom:12px;max-width:70%}
         .message.out{justify-content:flex-end;align-self:flex-end}
@@ -46,29 +43,32 @@
         .bubble{background:#2b5278;border-radius:16px;padding:8px 14px}
         .message.in .bubble{background:#182533}
         
-        /* ВВОД */
         .input-area{padding:12px 16px;border-top:1px solid #293d4f}
         .input-row{display:flex;gap:10px}
         .msg-input{flex:1;background:#232e3c;border:none;border-radius:22px;padding:10px 16px;color:#fff;resize:none}
         
-        /* МОДАЛКИ */
         .modal{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:200}
         .modal.active{display:flex}
-        .modal-content{background:#17212b;border-radius:20px;width:400px;padding:20px}
+        .modal-content{background:#17212b;border-radius:20px;width:500px;max-width:90vw;padding:20px;max-height:80vh;overflow-y:auto}
         .modal-header{display:flex;justify-content:space-between;margin-bottom:16px}
         
-        /* ДРАВЕР МЕНЮ */
         .drawer{position:fixed;left:-300px;top:0;width:280px;height:100%;background:#17212b;z-index:151;transition:left 0.3s;padding:20px}
         .drawer.open{left:0}
         .drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:150;display:none}
-        .drawer-item{padding:12px 0;cursor:pointer;border-bottom:1px solid #293d4f}
+        .drawer-item{padding:12px 0;cursor:pointer;border-bottom:1px solid #293d4f;display:flex;align-items:center;gap:10px}
         
-        /* СПАМ-МОДАЛКА */
         .spam-panel{position:fixed;bottom:0;left:0;right:0;background:#17212b;padding:20px;border-radius:20px 20px 0 0;z-index:300;transform:translateY(100%);transition:transform 0.3s}
         .spam-panel.open{transform:translateY(0)}
         
+        .notification{background:#2b5278;border-radius:12px;padding:12px;margin-bottom:8px}
+        .notification.unread{background:#2b88d8}
+        
         .error{color:#e05c65;margin-top:12px;text-align:center}
-        .success{color:#4dba87}
+        .tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:4px;background:#2b88d820;color:#2b88d8}
+        .badge-verified{background:#2b88d820;color:#2b88d8}
+        
+        .bot-message{background:#232e3c;border-radius:12px;padding:12px;margin-bottom:8px}
+        .bot-response{background:#0e1621;padding:10px;border-radius:10px;margin-top:6px;white-space:pre-wrap}
     </style>
 </head>
 <body>
@@ -98,10 +98,9 @@
 
 <!-- ОСНОВНОЕ ПРИЛОЖЕНИЕ -->
 <div id="app" class="app" style="display:none">
-    <!-- САЙДБАР -->
     <div class="sidebar">
         <div class="header">
-            <div class="avatar-small" id="myAvatar" onclick="openDrawer()">👤</div>
+            <div class="avatar-small verified-badge" id="myAvatar" onclick="openDrawer()">👤</div>
             <div style="flex:1">
                 <div id="myName"></div>
                 <div id="myStars" style="font-size:12px;color:#f5a623"></div>
@@ -114,7 +113,6 @@
         <div class="chat-list" id="chatList"></div>
     </div>
     
-    <!-- ОСНОВНАЯ ОБЛАСТЬ -->
     <div class="main">
         <div class="header" id="chatHeader" style="display:none">
             <div class="avatar-small" id="chatAvatar"></div>
@@ -137,18 +135,20 @@
     </div>
 </div>
 
-<!-- ДРАВЕР МЕНЮ -->
+<!-- ДРАВЕР -->
 <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
     <div style="text-align:center;margin-bottom:20px">
-        <div class="avatar-small" style="width:80px;height:80px;margin:0 auto 12px" id="drawerAvatar">👤</div>
+        <div class="avatar-small verified-badge" style="width:80px;height:80px;margin:0 auto 12px;font-size:32px" id="drawerAvatar">👤</div>
         <div id="drawerName"></div>
         <div id="drawerStars" style="color:#f5a623"></div>
     </div>
-    <div class="drawer-item" onclick="closeDrawer(); openProfile(currentUser.id)">👤 Мой профиль</div>
-    <div class="drawer-item" onclick="closeDrawer(); openShop()">🏪 Магазин</div>
-    <div class="drawer-item" onclick="closeDrawer(); openMyNFTs()">🎁 Мои NFT</div>
-    <div class="drawer-item" onclick="logout()">🚪 Выйти</div>
+    <div class="drawer-item" onclick="closeDrawer(); openProfile(currentUser.id)"><span>👤</span> Мой профиль</div>
+    <div class="drawer-item" onclick="closeDrawer(); openTelegramNotifications()"><span>📢</span> @TelegramNotifications <span style="color:#4dba87;font-size:11px;margin-left:auto">✅</span></div>
+    <div class="drawer-item" onclick="closeDrawer(); openSpamInfoBot()"><span>🤖</span> @SpamInfoBot <span style="color:#4dba87;font-size:11px;margin-left:auto">✅</span></div>
+    <div class="drawer-item" onclick="closeDrawer(); openShop()"><span>🏪</span> Магазин</div>
+    <div class="drawer-item" onclick="closeDrawer(); openMyNFTs()"><span>🎁</span> Мои NFT</div>
+    <div class="drawer-item" onclick="logout()"><span>🚪</span> Выйти</div>
 </div>
 
 <!-- МОДАЛ ПРОФИЛЯ -->
@@ -156,6 +156,33 @@
     <div class="modal-content">
         <div class="modal-header"><h3 id="profileTitle"></h3><button onclick="closeModal('profileModal')">✕</button></div>
         <div id="profileBody"></div>
+    </div>
+</div>
+
+<!-- МОДАЛ УВЕДОМЛЕНИЙ (TelegramNotifications) -->
+<div id="notificationsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📢 @TelegramNotifications <span style="color:#4dba87;font-size:12px">✅ Официальный бот</span></h3>
+            <button onclick="closeModal('notificationsModal')">✕</button>
+        </div>
+        <div id="notificationsList" style="max-height:400px;overflow-y:auto"></div>
+    </div>
+</div>
+
+<!-- МОДАЛ СПАМ ИНФО БОТА -->
+<div id="spamBotModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>🤖 @SpamInfoBot <span style="color:#4dba87;font-size:12px">✅ Официальный бот</span></h3>
+            <button onclick="closeModal('spamBotModal')">✕</button>
+        </div>
+        <div style="margin-bottom:12px">
+            <input type="text" id="botCommand" placeholder="Введите команду: /start, /appeal [причина]" style="width:70%;display:inline-block;margin-right:8px">
+            <button onclick="sendBotCommand()" style="width:25%">➤</button>
+        </div>
+        <div id="botMessages" style="max-height:300px;overflow-y:auto;margin-bottom:12px"></div>
+        <div id="botStatus" style="background:#0e1621;border-radius:12px;padding:12px"></div>
     </div>
 </div>
 
@@ -191,7 +218,7 @@
 <div id="spamPanel" class="spam-panel">
     <h3>🚫 Спам-блок</h3>
     <p id="spamReasonText"></p>
-    <button onclick="openSpamInfo()">Подробнее (@SpamInfoBot)</button>
+    <button onclick="closeSpamPanel(); openSpamInfoBot()">🤖 Обратиться к @SpamInfoBot</button>
     <button onclick="closeSpamPanel()" style="margin-top:8px;background:#555">Закрыть</button>
 </div>
 
@@ -234,6 +261,8 @@ async function doLogin() {
             updateUI();
             await loadData();
             startPolling();
+            checkSpamStatus();
+            loadNotifications();
         } else { showError(data.error); }
     } catch(e) { showError('Ошибка сервера'); }
 }
@@ -271,6 +300,100 @@ function updateUI() {
     document.getElementById('drawerStars').innerHTML = `⭐ ${currentUser.stars}`;
     document.getElementById('myAvatar').innerHTML = currentUser.name[0];
     document.getElementById('drawerAvatar').innerHTML = currentUser.name[0];
+}
+
+// ============ УВЕДОМЛЕНИЯ ============
+async function loadNotifications() {
+    try {
+        const res = await fetch(`${API_URL}/api/notifications/${currentUser.id}`);
+        const notifs = await res.json();
+        const unreadCount = notifs.filter(n => !n.read).length;
+        if(unreadCount > 0) {
+            document.getElementById('myAvatar').classList.add('verified-badge');
+        }
+        // Не показываем автоматически, только по клику
+    } catch(e) {}
+}
+
+async function openTelegramNotifications() {
+    const res = await fetch(`${API_URL}/api/notifications/${currentUser.id}`);
+    const notifs = await res.json();
+    const container = document.getElementById('notificationsList');
+    if(notifs.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px">Нет уведомлений</div>';
+    } else {
+        container.innerHTML = notifs.map(n => `
+            <div class="notification ${!n.read ? 'unread' : ''}">
+                <strong>${n.title}</strong><br>
+                ${n.message}<br>
+                <span style="font-size:11px;color:#aaa">${new Date(n.ts).toLocaleString()}</span>
+            </div>
+        `).join('');
+    }
+    // Помечаем как прочитанные
+    await fetch(`${API_URL}/api/notifications/mark-read`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ userId: currentUser.id })
+    });
+    openModal('notificationsModal');
+}
+
+// ============ БОТ SPAM INFO ============
+async function openSpamInfoBot() {
+    const container = document.getElementById('botMessages');
+    container.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">Загрузка...</div>';
+    openModal('spamBotModal');
+    
+    // Получаем статус
+    const res = await fetch(`${API_URL}/api/bot/spam-info`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ userId: currentUser.id, command: '/start' })
+    });
+    const data = await res.json();
+    
+    container.innerHTML = `
+        <div class="bot-message">
+            <strong>🤖 @SpamInfoBot</strong> <span style="color:#4dba87">✅</span>
+            <div class="bot-response">${data.response.replace(/\n/g, '<br>')}</div>
+        </div>
+    `;
+    document.getElementById('botStatus').innerHTML = '';
+}
+
+async function sendBotCommand() {
+    const input = document.getElementById('botCommand');
+    const text = input.value.trim();
+    if(!text) return;
+    
+    const container = document.getElementById('botMessages');
+    container.innerHTML += `
+        <div class="bot-message" style="background:#2b5278">
+            <strong>👤 ${currentUser.name}</strong>
+            <div class="bot-response">${escapeHtml(text)}</div>
+        </div>
+    `;
+    input.value = '';
+    
+    let command = text.split(' ')[0];
+    let args = text.substring(command.length).trim();
+    
+    const res = await fetch(`${API_URL}/api/bot/spam-info`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ userId: currentUser.id, command, text: args })
+    });
+    const data = await res.json();
+    
+    container.innerHTML += `
+        <div class="bot-message">
+            <strong>🤖 @SpamInfoBot</strong> <span style="color:#4dba87">✅</span>
+            <div class="bot-response">${data.response.replace(/\n/g, '<br>')}</div>
+        </div>
+    `;
+    container.scrollTop = container.scrollHeight;
+    
+    if(data.appeals && data.appeals.length > 0) {
+        document.getElementById('botStatus').innerHTML = `<span style="color:#f5a623">📝 У вас есть активные апелляции: ${data.appeals.length}</span>`;
+    }
 }
 
 // ============ ЗАГРУЗКА ДАННЫХ ============
@@ -358,7 +481,6 @@ async function loadMessages() {
     container.scrollTop = container.scrollHeight;
 }
 
-// ============ ОТПРАВКА СООБЩЕНИЯ ============
 async function sendMessage() {
     const input = document.getElementById('msgInput');
     const text = input.value.trim();
@@ -388,9 +510,15 @@ async function sendMessage() {
     await loadData();
 }
 
-function openSpamInfo() {
-    window.open(`https://t.me/SpamInfoBot?start=spam_${currentUser.id}`, '_blank');
+async function checkSpamStatus() {
+    const res = await fetch(`${API_URL}/api/users/${currentUser.id}`);
+    const user = await res.json();
+    if(user.spamBlocked) {
+        document.getElementById('spamReasonText').innerHTML = `Причина: ${user.spamReason}<br>${user.spamUntil ? `До: ${new Date(user.spamUntil).toLocaleString()}` : 'Навсегда'}`;
+        document.getElementById('spamPanel').classList.add('open');
+    }
 }
+
 function closeSpamPanel() { document.getElementById('spamPanel').classList.remove('open'); }
 
 // ============ ПРОФИЛЬ ============
@@ -488,13 +616,13 @@ async function submitReport() {
     closeModal('reportModal');
 }
 
-// ============ МАГАЗИН (ЗАГЛУШКА) ============
+// ============ МАГАЗИН ============
 function openShop() { alert('Магазин подарков - в разработке'); }
 function openMyNFTs() { alert('Ваши NFT - в разработке'); }
 
-// ============ ОБЩИЕ ФУНКЦИИ ============
+// ============ ОБЩИЕ ============
 function logout() { currentUser = null; location.reload(); }
-function startPolling() { setInterval(() => { if(currentChatId) loadMessages(); loadData(); }, 3000); }
+function startPolling() { setInterval(() => { if(currentChatId) loadMessages(); loadData(); loadNotifications(); }, 3000); }
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openDrawer() { document.getElementById('drawer').classList.add('open'); document.getElementById('drawerOverlay').style.display = 'block'; }
