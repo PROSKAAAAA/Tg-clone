@@ -18,10 +18,11 @@ const dialogs = new Map();
 const reports = [];
 const appeals = [];
 const chats = new Map();
-const subscriptions = new Map();
-
-// Уведомления от бота @TelegramNotifications
 const notifications = new Map();
+const botAppeals = new Map();
+
+// Глобальный баннер
+let globalBanner = { text: '', link: '' };
 
 // Дефолтный админ
 users.set('admin', {
@@ -72,6 +73,129 @@ chats.set('channel1', {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'messenger.html')));
 app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
+// ============ БАННЕР ============
+app.get('/api/banner', (req, res) => {
+    res.json(globalBanner);
+});
+
+app.post('/api/admin/banner', (req, res) => {
+    globalBanner = { text: req.body.text || '', link: req.body.link || '' };
+    res.json({ success: true });
+});
+
+// ============ УВЕДОМЛЕНИЯ ============
+function sendNotification(userId, title, message) {
+    if (!notifications.has(userId)) notifications.set(userId, []);
+    notifications.get(userId).push({
+        id: uuidv4(),
+        title,
+        message,
+        ts: Date.now(),
+        read: false
+    });
+}
+
+app.post('/api/admin/send-notification', (req, res) => {
+    const { userId, title, message } = req.body;
+    if (!userId || !title || !message) return res.status(400).json({ error: 'Заполните поля' });
+    sendNotification(userId, title, message);
+    res.json({ success: true });
+});
+
+app.get('/api/notifications/:userId', (req, res) => {
+    const userNotifs = notifications.get(req.params.userId) || [];
+    res.json(userNotifs);
+});
+
+app.post('/api/notifications/mark-read', (req, res) => {
+    const { userId } = req.body;
+    const userNotifs = notifications.get(userId);
+    if (userNotifs) {
+        userNotifs.forEach(n => n.read = true);
+        notifications.set(userId, userNotifs);
+    }
+    res.json({ success: true });
+});
+
+// ============ БОТ @SpamInfoBot ============
+app.post('/api/bot/spam-info', (req, res) => {
+    const { userId, command, text } = req.body;
+    const user = users.get(userId);
+    if (!user) return res.json({ error: 'Пользователь не найден' });
+    
+    let response = '';
+    let appealsList = botAppeals.get(userId) || [];
+    
+    if (command === '/start') {
+        if (user.spamBlocked) {
+            response = `🚫 **У вас активен спам-блок!**\n\n📋 **Причина:** ${user.spamReason || 'Не указана'}\n⏰ **До:** ${user.spamUntil ? new Date(user.spamUntil).toLocaleString() : 'Навсегда'}\n\n📝 Для подачи апелляции отправьте команду /appeal с указанием причины`;
+        } else {
+            response = `✅ **У вас нет активных ограничений**\n\nВы можете отправлять сообщения без ограничений. Если вы считаете, что блок был выдан ошибочно, отправьте /appeal`;
+        }
+    } 
+    else if (command === '/appeal') {
+        if (!user.spamBlocked) {
+            response = `❌ У вас нет активного спам-блока. Апелляция не требуется.`;
+        } else {
+            const reason = text || 'Причина не указана';
+            appealsList.push({
+                id: uuidv4(),
+                reason,
+                ts: Date.now(),
+                status: 'pending'
+            });
+            botAppeals.set(userId, appealsList);
+            response = `✅ Ваша апелляция принята! Администратор рассмотрит её в ближайшее время.`;
+            sendNotification('admin', '📝 Новая апелляция', `Пользователь @${userId} подал апелляцию: ${reason}`);
+        }
+    }
+    else {
+        response = `🤖 **@SpamInfoBot**\n\nДоступные команды:\n/start - Проверить статус спам-блока\n/appeal [причина] - Подать апелляцию`;
+    }
+    
+    res.json({ response, appeals: appealsList.filter(a => a.status === 'pending') });
+});
+
+app.get('/api/bot/appeals', (req, res) => {
+    const allAppeals = [];
+    for (const [userId, appealsList] of botAppeals) {
+        appealsList.forEach(a => {
+            if (a.status === 'pending') {
+                allAppeals.push({ userId, ...a });
+            }
+        });
+    }
+    res.json(allAppeals);
+});
+
+app.post('/api/bot/appeals/:id', (req, res) => {
+    const { id } = req.params;
+    const { status, adminComment } = req.body;
+    
+    for (const [userId, appealsList] of botAppeals) {
+        const appeal = appealsList.find(a => a.id === id);
+        if (appeal) {
+            appeal.status = status;
+            appeal.adminComment = adminComment;
+            botAppeals.set(userId, appealsList);
+            
+            if (status === 'approved') {
+                const user = users.get(userId);
+                if (user) {
+                    user.spamBlocked = false;
+                    user.spamReason = null;
+                    user.spamUntil = null;
+                    sendNotification(userId, '✅ Апелляция одобрена', `Ваш спам-блок снят!`);
+                }
+            } else if (status === 'rejected') {
+                sendNotification(userId, '❌ Апелляция отклонена', `Ваша апелляция отклонена. Причина: ${adminComment || 'не указана'}`);
+            }
+            break;
+        }
+    }
+    res.json({ success: true });
+});
+
 // ============ АУТЕНТИФИКАЦИЯ ============
 app.post('/api/register', async (req, res) => {
     const { name, username, password } = req.body;
@@ -94,9 +218,7 @@ app.post('/api/register', async (req, res) => {
         bio: null
     });
     
-    // Уведомление от бота
     sendNotification(username, '🎉 Добро пожаловать!', `Вы успешно зарегистрировались в Telegram!`);
-    
     res.json({ success: true, user: { id: username, name, username, stars: 100 } });
 });
 
@@ -109,7 +231,6 @@ app.post('/api/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(400).json({ error: 'Неверный пароль' });
     
-    // Уведомление о входе
     sendNotification(username, '🔐 Новый вход', `Вход в аккаунт выполнен с нового устройства`);
     
     res.json({
@@ -138,6 +259,7 @@ app.get('/api/users', (req, res) => {
         tags: u.tags,
         banned: u.banned,
         frozen: u.frozen,
+        spamBlocked: u.spamBlocked,
         avatar: u.avatar,
         bio: u.bio
     }));
@@ -156,7 +278,10 @@ app.get('/api/users/:id', (req, res) => {
         bio: user.bio,
         avatar: user.avatar,
         frozen: user.frozen,
-        banned: user.banned
+        banned: user.banned,
+        spamBlocked: user.spamBlocked,
+        spamReason: user.spamReason,
+        spamUntil: user.spamUntil
     });
 });
 
@@ -182,124 +307,6 @@ app.put('/api/users/:id', (req, res) => {
         }
     }
     
-    res.json({ success: true });
-});
-
-// ============ УВЕДОМЛЕНИЯ ОТ БОТА ============
-function sendNotification(userId, title, message) {
-    if (!notifications.has(userId)) notifications.set(userId, []);
-    notifications.get(userId).push({
-        id: uuidv4(),
-        title,
-        message,
-        ts: Date.now(),
-        read: false
-    });
-}
-
-// Админ отправляет уведомление от лица бота
-app.post('/api/admin/send-notification', (req, res) => {
-    const { userId, title, message } = req.body;
-    if (!userId || !title || !message) return res.status(400).json({ error: 'Заполните поля' });
-    sendNotification(userId, title, message);
-    res.json({ success: true });
-});
-
-app.get('/api/notifications/:userId', (req, res) => {
-    const userNotifs = notifications.get(req.params.userId) || [];
-    res.json(userNotifs);
-});
-
-app.post('/api/notifications/mark-read', (req, res) => {
-    const { userId } = req.body;
-    const userNotifs = notifications.get(userId);
-    if (userNotifs) {
-        userNotifs.forEach(n => n.read = true);
-        notifications.set(userId, userNotifs);
-    }
-    res.json({ success: true });
-});
-
-// ============ БОТ @SpamInfoBot ============
-// Хранилище апелляций от бота
-const botAppeals = new Map();
-
-app.post('/api/bot/spam-info', (req, res) => {
-    const { userId, command, text } = req.body;
-    const user = users.get(userId);
-    if (!user) return res.json({ error: 'Пользователь не найден' });
-    
-    let response = '';
-    let appeals = botAppeals.get(userId) || [];
-    
-    if (command === '/start') {
-        if (user.spamBlocked) {
-            response = `🚫 **У вас активен спам-блок!**\n\n📋 **Причина:** ${user.spamReason || 'Не указана'}\n⏰ **До:** ${user.spamUntil ? new Date(user.spamUntil).toLocaleString() : 'Навсегда'}\n\n📝 Для подачи апелляции отправьте команду /appeal с указанием причины`;
-        } else {
-            response = `✅ **У вас нет активных ограничений**\n\nВы можете отправлять сообщения без ограничений. Если вы считаете, что блок был выдан ошибочно, отправьте /appeal`;
-        }
-    } 
-    else if (command === '/appeal') {
-        if (!user.spamBlocked) {
-            response = `❌ У вас нет активного спам-блока. Апелляция не требуется.`;
-        } else {
-            const reason = text || 'Причина не указана';
-            appeals.push({
-                id: uuidv4(),
-                reason,
-                ts: Date.now(),
-                status: 'pending'
-            });
-            botAppeals.set(userId, appeals);
-            response = `✅ Ваша апелляция принята! Администратор рассмотрит её в ближайшее время.`;
-            // Уведомляем админа
-            sendNotification('admin', '📝 Новая апелляция', `Пользователь @${userId} подал апелляцию: ${reason}`);
-        }
-    }
-    else {
-        response = `🤖 **@SpamInfoBot**\n\nДоступные команды:\n/start - Проверить статус спам-блока\n/appeal [причина] - Подать апелляцию`;
-    }
-    
-    res.json({ response, appeals: appeals.filter(a => a.status === 'pending') });
-});
-
-app.get('/api/bot/appeals', (req, res) => {
-    const allAppeals = [];
-    for (const [userId, appeals] of botAppeals) {
-        appeals.forEach(a => {
-            if (a.status === 'pending') {
-                allAppeals.push({ userId, ...a });
-            }
-        });
-    }
-    res.json(allAppeals);
-});
-
-app.post('/api/bot/appeals/:id', (req, res) => {
-    const { id } = req.params;
-    const { status, adminComment } = req.body;
-    
-    for (const [userId, appeals] of botAppeals) {
-        const appeal = appeals.find(a => a.id === id);
-        if (appeal) {
-            appeal.status = status;
-            appeal.adminComment = adminComment;
-            botAppeals.set(userId, appeals);
-            
-            if (status === 'approved') {
-                const user = users.get(userId);
-                if (user) {
-                    user.spamBlocked = false;
-                    user.spamReason = null;
-                    user.spamUntil = null;
-                    sendNotification(userId, '✅ Апелляция одобрена', `Ваш спам-блок снят!`);
-                }
-            } else if (status === 'rejected') {
-                sendNotification(userId, '❌ Апелляция отклонена', `Ваша апелляция отклонена. Причина: ${adminComment || 'не указана'}`);
-            }
-            break;
-        }
-    }
     res.json({ success: true });
 });
 
