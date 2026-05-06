@@ -44,6 +44,7 @@ db.serialize(() => {
         avatar TEXT,
         description TEXT,
         creatorId TEXT,
+        isPublic INTEGER DEFAULT 1,
         members TEXT,
         createdAt INTEGER
     )`);
@@ -83,7 +84,8 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
         fromUserId TEXT,
-        againstUserId TEXT,
+        againstId TEXT,
+        type TEXT,
         reason TEXT,
         comment TEXT,
         status TEXT,
@@ -138,7 +140,7 @@ db.serialize(() => {
         ts INTEGER
     )`);
     
-    // Дефолтные модели и фоны
+    // Дефолтные данные
     const defaultModels = JSON.stringify([
         { url: '', probability: 70, name: 'Обычная' },
         { url: '', probability: 20, name: 'Редкая' },
@@ -160,7 +162,6 @@ db.serialize(() => {
         { type: 'color', value: '#1f1f3d', probability: 5, name: 'Тёмно-синий' }
     ]);
     
-    // Дефолтная коллекция
     db.get("SELECT COUNT(*) as count FROM nft_collections", (err, row) => {
         if (row && row.count === 0) {
             db.run(`INSERT INTO nft_collections (id, name, emoji, type, price, maxSupply, models, backgrounds, upgradePrice, upgradedModels, upgradedBackgrounds, rarity, minted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -168,12 +169,11 @@ db.serialize(() => {
         }
     });
     
-    // Дефолтный админ
     db.get("SELECT COUNT(*) as count FROM users WHERE username = 'admin'", (err, row) => {
         if (row && row.count === 0) {
             const hash = bcrypt.hashSync('admin2024', 10);
-            db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                ['admin', 'Admin', 'admin', hash, 999999, JSON.stringify(['verified']), Date.now(), 0, 0]);
+            db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, frozen, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ['admin', 'Admin', 'admin', hash, 999999, JSON.stringify(['verified']), Date.now(), 0, 0, 0]);
         }
     });
 });
@@ -181,6 +181,38 @@ db.serialize(() => {
 // ============ СТРАНИЦЫ ==========
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'messenger.html')));
 app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+
+// ============ БОТ УВЕДОМЛЕНИЯ ==========
+function sendBotNotification(userId, title, message) {
+    const msgId = uuidv4();
+    db.run(`INSERT INTO bot_messages (id, userId, title, message, ts) VALUES (?, ?, ?, ?, ?)`,
+        [msgId, userId, title, message, Date.now()]);
+}
+
+app.get('/api/bot/messages/:userId', (req, res) => {
+    db.all("SELECT * FROM bot_messages WHERE userId = ? ORDER BY ts DESC", [req.params.userId], (err, msgs) => {
+        res.json(msgs || []);
+    });
+});
+
+app.post('/api/bot/messages/mark-read', (req, res) => {
+    db.run("UPDATE bot_messages SET read = 1 WHERE userId = ?", [req.body.userId]);
+    res.json({ success: true });
+});
+
+app.post('/api/bot/spam-info', (req, res) => {
+    const { userId } = req.body;
+    db.get("SELECT spamBlocked, spamReason, spamUntil, name FROM users WHERE id = ?", [userId], (err, user) => {
+        if (!user) return res.json({ exists: false });
+        res.json({
+            exists: true,
+            isBlocked: user.spamBlocked === 1,
+            reason: user.spamReason,
+            until: user.spamUntil,
+            name: user.name
+        });
+    });
+});
 
 // ============ АУТЕНТИФИКАЦИЯ ==========
 app.post('/api/register', async (req, res) => {
@@ -192,13 +224,11 @@ app.post('/api/register', async (req, res) => {
         if (user) return res.status(400).json({ error: 'Пользователь уже существует' });
         
         const hashed = await bcrypt.hash(password, 10);
-        db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [username, name, username, hashed, 100, JSON.stringify([]), Date.now(), 0, 0],
+        db.run(`INSERT INTO users (id, name, username, password, stars, tags, createdAt, banned, frozen, spamBlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [username, name, username, hashed, 100, JSON.stringify([]), Date.now(), 0, 0, 0],
             (err) => {
                 if (err) return res.status(500).json({ error: 'Ошибка' });
-                
-                // Уведомление бота
-                sendBotNotification(username, '🔐 Новый аккаунт', `Пользователь @${username} зарегистрировался!`);
+                sendBotNotification(username, '🔐 Новый аккаунт', `Добро пожаловать в Telegram, ${name}!`);
                 res.json({ success: true, user: { id: username, name, username, stars: 100 } });
             });
     });
@@ -217,8 +247,7 @@ app.post('/api/login', async (req, res) => {
         let tags = [];
         try { tags = JSON.parse(user.tags); } catch(e) {}
         
-        // Уведомление о входе
-        sendBotNotification(username, '🔐 Новый вход', `Вход в аккаунт @${username} с нового устройства (IP: ${req.ip})`);
+        sendBotNotification(username, '🔐 Новый вход', `Вход в аккаунт @${username} с нового устройства`);
         
         res.json({
             success: true,
@@ -233,7 +262,9 @@ app.post('/api/login', async (req, res) => {
                 selectedGift: user.selectedGift || null,
                 spamBlocked: user.spamBlocked,
                 spamReason: user.spamReason,
-                spamUntil: user.spamUntil
+                spamUntil: user.spamUntil,
+                banned: user.banned,
+                frozen: user.frozen
             }
         });
     });
@@ -248,7 +279,7 @@ app.get('/api/users', (req, res) => {
 });
 
 app.get('/api/users/:id', (req, res) => {
-    db.get("SELECT id, name, username, avatar, stars, tags, bio, selectedGift, spamBlocked, spamReason, spamUntil FROM users WHERE id = ? AND id != 'admin'", [req.params.id], (err, user) => {
+    db.get("SELECT id, name, username, avatar, stars, tags, bio, selectedGift, banned, frozen, spamBlocked, spamReason, spamUntil FROM users WHERE id = ? AND id != 'admin'", [req.params.id], (err, user) => {
         if (!user) return res.status(404).json({ error: 'Не найден' });
         try { user.tags = JSON.parse(user.tags); } catch(e) { user.tags = []; }
         res.json(user);
@@ -270,6 +301,10 @@ app.put('/api/users/:id', (req, res) => {
     if (avatar !== undefined) db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatar, id]);
     if (tags !== undefined) db.run("UPDATE users SET tags = ? WHERE id = ?", [JSON.stringify(tags), id]);
     if (selectedGift !== undefined) db.run("UPDATE users SET selectedGift = ? WHERE id = ?", [selectedGift, id]);
+    
+    if (spamBlocked === true) {
+        sendBotNotification(id, '🚫 Спам-блок', `Вы получили спам-блок! Причина: ${spamReason || 'нарушение правил'}. Подробнее: @SpamInfoBot`);
+    }
     
     res.json({ success: true });
 });
@@ -295,12 +330,11 @@ app.get('/api/dialogs/:userId', (req, res) => {
     });
 });
 
-// ============ СООБЩЕНИЯ С ПРОВЕРКОЙ СПАМ-БЛОКА ==========
+// ============ СООБЩЕНИЯ С ПРОВЕРКОЙ ==========
 app.post('/api/messages', (req, res) => {
     const { from, to, type, text } = req.body;
     
-    // Проверка спам-блока
-    db.get("SELECT spamBlocked, spamUntil, name FROM users WHERE id = ?", [from], (err, user) => {
+    db.get("SELECT spamBlocked, spamUntil, frozen, banned FROM users WHERE id = ?", [from], (err, user) => {
         if (user && user.spamBlocked) {
             if (user.spamUntil && user.spamUntil > Date.now()) {
                 return res.status(403).json({ error: 'spam_blocked', reason: user.spamReason, until: user.spamUntil });
@@ -309,6 +343,12 @@ app.post('/api/messages', (req, res) => {
             } else {
                 return res.status(403).json({ error: 'spam_blocked', reason: user.spamReason });
             }
+        }
+        if (user && user.frozen) {
+            return res.status(403).json({ error: 'frozen' });
+        }
+        if (user && user.banned) {
+            return res.status(403).json({ error: 'banned' });
         }
         
         const dialogId = [from, to].sort().join('_');
@@ -338,11 +378,11 @@ app.get('/api/messages/:userId', (req, res) => {
 
 // ============ КАНАЛЫ И ГРУППЫ ==========
 app.post('/api/chats', (req, res) => {
-    const { type, title, description, creatorId } = req.body;
+    const { type, title, description, creatorId, isPublic } = req.body;
     const chatId = uuidv4();
     
-    db.run(`INSERT INTO chats (id, type, title, description, creatorId, members, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [chatId, type, title, description, creatorId, JSON.stringify([creatorId]), Date.now()],
+    db.run(`INSERT INTO chats (id, type, title, description, creatorId, isPublic, members, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [chatId, type, title, description, creatorId, isPublic !== false ? 1 : 0, JSON.stringify([creatorId]), Date.now()],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
             db.run(`INSERT INTO subscriptions (userId, chatId, role, joinedAt) VALUES (?, ?, ?, ?)`, [creatorId, chatId, 'creator', Date.now()]);
@@ -369,6 +409,7 @@ app.post('/api/chats/:id/join', (req, res) => {
     
     db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
         if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+        if (chat.isPublic === 0) return res.status(403).json({ error: 'Чат приватный' });
         
         let members = [];
         try { members = JSON.parse(chat.members); } catch(e) {}
@@ -390,14 +431,21 @@ app.get('/api/chats/:id/messages', (req, res) => {
 app.post('/api/chats/:id/messages', (req, res) => {
     const { id } = req.params;
     const { fromUserId, type, text } = req.body;
-    const messageId = uuidv4();
     
-    db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-        [messageId, id, fromUserId, type, text, Date.now()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
+    db.get("SELECT * FROM chats WHERE id = ?", [id], (err, chat) => {
+        if (!chat) return res.status(404).json({ error: 'Чат не найден' });
+        if (chat.type === 'channel' && chat.creatorId !== fromUserId) {
+            return res.status(403).json({ error: 'Только создатель канала может писать' });
+        }
+        
+        const messageId = uuidv4();
+        db.run(`INSERT INTO messages (id, chatId, fromUserId, type, text, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+            [messageId, id, fromUserId, type, text, Date.now()],
+            (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+    });
 });
 
 app.get('/api/my/chats/:userId', (req, res) => {
@@ -412,14 +460,26 @@ app.get('/api/my/chats/:userId', (req, res) => {
     });
 });
 
+app.put('/api/chats/:id', (req, res) => {
+    const { id } = req.params;
+    const { isPublic, title, description } = req.body;
+    
+    if (isPublic !== undefined) db.run("UPDATE chats SET isPublic = ? WHERE id = ?", [isPublic ? 1 : 0, id]);
+    if (title !== undefined) db.run("UPDATE chats SET title = ? WHERE id = ?", [title, id]);
+    if (description !== undefined) db.run("UPDATE chats SET description = ? WHERE id = ?", [description, id]);
+    
+    res.json({ success: true });
+});
+
 app.delete('/api/chats/:id', (req, res) => {
     db.run("DELETE FROM chats WHERE id = ?", [req.params.id], (err) => {
         db.run("DELETE FROM subscriptions WHERE chatId = ?", [req.params.id]);
+        db.run("DELETE FROM messages WHERE chatId = ?", [req.params.id]);
         res.json({ success: true });
     });
 });
 
-// ============ NFT ПОДАРКИ (СЕРИЙНЫЙ НОМЕР СРАЗУ) ==========
+// ============ NFT ПОДАРКИ ==========
 app.get('/api/nft/collections', (req, res) => {
     db.all("SELECT * FROM nft_collections", (err, collections) => {
         res.json(collections || []);
@@ -454,8 +514,7 @@ app.delete('/api/nft/collections/:id', (req, res) => {
     });
 });
 
-// ПОКУПКА — СРАЗУ ВЫДАЁТ СЕРИЙНЫЙ НОМЕР
-app.post('/api/nft/buy', async (req, res) => {
+app.post('/api/nft/buy', (req, res) => {
     const { userId, collectionId } = req.body;
     
     db.get("SELECT * FROM users WHERE id = ?", [userId], (err, user) => {
@@ -468,7 +527,6 @@ app.post('/api/nft/buy', async (req, res) => {
                 return res.status(400).json({ error: 'Лимит коллекции исчерпан' });
             }
             
-            // Выбираем случайную модель
             let models = [];
             try { models = JSON.parse(collection.models); } catch(e) {}
             let selectedModel = null;
@@ -478,14 +536,10 @@ app.post('/api/nft/buy', async (req, res) => {
                 let accum = 0;
                 for (let m of models) {
                     accum += (m.probability || 0);
-                    if (random <= accum) {
-                        selectedModel = m;
-                        break;
-                    }
+                    if (random <= accum) { selectedModel = m; break; }
                 }
             }
             
-            // Выбираем случайный фон
             let backgrounds = [];
             try { backgrounds = JSON.parse(collection.backgrounds); } catch(e) {}
             let selectedBackground = null;
@@ -495,14 +549,10 @@ app.post('/api/nft/buy', async (req, res) => {
                 let accum = 0;
                 for (let bg of backgrounds) {
                     accum += (bg.probability || 0);
-                    if (random <= accum) {
-                        selectedBackground = bg;
-                        break;
-                    }
+                    if (random <= accum) { selectedBackground = bg; break; }
                 }
             }
             
-            // СЕРИЙНЫЙ НОМЕР СРАЗУ!
             const serialNumber = `${collection.name.substring(0, 3)}-${String(collection.minted + 1).padStart(4, '0')}`;
             const itemId = uuidv4();
             
@@ -511,7 +561,6 @@ app.post('/api/nft/buy', async (req, res) => {
                 [itemId, collectionId, serialNumber, userId, 0, JSON.stringify(selectedModel), JSON.stringify(selectedBackground), Date.now()]);
             db.run("UPDATE nft_collections SET minted = minted + 1 WHERE id = ?", [collectionId]);
             
-            // Уведомление бота о покупке
             sendBotNotification(userId, '🛍️ Покупка NFT', `Вы купили ${collection.name} #${serialNumber} за ${collection.price} ⭐!`);
             
             res.json({ success: true, gift: { id: itemId, serialNumber, name: collection.name, emoji: collection.emoji, model: selectedModel, background: selectedBackground } });
@@ -519,7 +568,6 @@ app.post('/api/nft/buy', async (req, res) => {
     });
 });
 
-// УЛУЧШЕНИЕ — НОВЫЙ СЕРИЙНЫЙ НОМЕР
 app.post('/api/nft/upgrade', (req, res) => {
     const { userId, itemId } = req.body;
     
@@ -534,7 +582,6 @@ app.post('/api/nft/upgrade', (req, res) => {
                 if (!collection) return res.status(404).json({ error: 'Коллекция не найдена' });
                 if (user.stars < collection.upgradePrice) return res.status(400).json({ error: 'Недостаточно звёзд' });
                 
-                // Выбираем улучшенную модель
                 let upgradedModels = [];
                 try { upgradedModels = JSON.parse(collection.upgradedModels); } catch(e) {}
                 let selectedModel = null;
@@ -544,14 +591,10 @@ app.post('/api/nft/upgrade', (req, res) => {
                     let accum = 0;
                     for (let m of upgradedModels) {
                         accum += (m.probability || 0);
-                        if (random <= accum) {
-                            selectedModel = m;
-                            break;
-                        }
+                        if (random <= accum) { selectedModel = m; break; }
                     }
                 }
                 
-                // Выбираем улучшенный фон
                 let upgradedBackgrounds = [];
                 try { upgradedBackgrounds = JSON.parse(collection.upgradedBackgrounds); } catch(e) {}
                 let selectedBackground = null;
@@ -561,14 +604,10 @@ app.post('/api/nft/upgrade', (req, res) => {
                     let accum = 0;
                     for (let bg of upgradedBackgrounds) {
                         accum += (bg.probability || 0);
-                        if (random <= accum) {
-                            selectedBackground = bg;
-                            break;
-                        }
+                        if (random <= accum) { selectedBackground = bg; break; }
                     }
                 }
                 
-                // НОВЫЙ СЕРИЙНЫЙ НОМЕР ПОСЛЕ УЛУЧШЕНИЯ
                 const newSerialNumber = `${collection.name.substring(0, 3)}-UP-${String(collection.minted + 1).padStart(4, '0')}`;
                 
                 db.run("UPDATE users SET stars = ? WHERE id = ?", [user.stars - collection.upgradePrice, userId]);
@@ -611,7 +650,7 @@ app.post('/api/nft/select', (req, res) => {
     });
 });
 
-// ============ ЖАЛОБЫ ==========
+// ============ ЖАЛОБЫ (на пользователей и каналы) ==========
 app.get('/api/reports', (req, res) => {
     db.all("SELECT * FROM reports ORDER BY ts DESC", (err, reports) => {
         res.json(reports || []);
@@ -619,11 +658,11 @@ app.get('/api/reports', (req, res) => {
 });
 
 app.post('/api/reports', (req, res) => {
-    const { from, against, reason, comment } = req.body;
+    const { from, againstId, type, reason, comment } = req.body;
     const reportId = uuidv4();
     
-    db.run(`INSERT INTO reports (id, fromUserId, againstUserId, reason, comment, status, ts) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [reportId, from, against, reason, comment || '', 'pending', Date.now()],
+    db.run(`INSERT INTO reports (id, fromUserId, againstId, type, reason, comment, status, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [reportId, from, againstId, type, reason, comment || '', 'pending', Date.now()],
         (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
@@ -634,27 +673,24 @@ app.put('/api/reports/:id', (req, res) => {
     const { id } = req.params;
     const { status, action, duration } = req.body;
     
-    db.run("UPDATE reports SET status = ? WHERE id = ?", [status, id], (err) => {
-        if (action === 'ban') {
-            db.get("SELECT againstUserId FROM reports WHERE id = ?", [id], (err, report) => {
-                if (report) db.run("UPDATE users SET banned = 1 WHERE id = ?", [report.againstUserId]);
-            });
+    db.get("SELECT againstId, type FROM reports WHERE id = ?", [id], (err, report) => {
+        if (!report) return res.status(404).json({ error: 'Не найдено' });
+        
+        db.run("UPDATE reports SET status = ? WHERE id = ?", [status, id]);
+        
+        if (report.type === 'user') {
+            if (action === 'ban') db.run("UPDATE users SET banned = 1 WHERE id = ?", [report.againstId]);
+            if (action === 'freeze') db.run("UPDATE users SET frozen = 1 WHERE id = ?", [report.againstId]);
+            if (action === 'spam') {
+                const until = duration ? Date.now() + (duration * 60 * 60 * 1000) : null;
+                db.run("UPDATE users SET spamBlocked = 1, spamReason = ?, spamUntil = ? WHERE id = ?", 
+                    [`Жалоба: ${action}`, until, report.againstId]);
+                sendBotNotification(report.againstId, '🚫 Спам-блок', `Вы получили спам-блок! Причина: жалоба. Подробнее: @SpamInfoBot`);
+            }
+        } else if (report.type === 'chat') {
+            if (action === 'delete') db.run("DELETE FROM chats WHERE id = ?", [report.againstId]);
         }
-        if (action === 'freeze') {
-            db.get("SELECT againstUserId FROM reports WHERE id = ?", [id], (err, report) => {
-                if (report) db.run("UPDATE users SET frozen = 1 WHERE id = ?", [report.againstUserId]);
-            });
-        }
-        if (action === 'spam') {
-            db.get("SELECT againstUserId FROM reports WHERE id = ?", [id], (err, report) => {
-                if (report) {
-                    const until = duration ? Date.now() + (duration * 60 * 60 * 1000) : null;
-                    db.run("UPDATE users SET spamBlocked = 1, spamReason = ?, spamUntil = ? WHERE id = ?", 
-                        [`Жалоба: ${action}`, until, report.againstUserId]);
-                    sendBotNotification(report.againstUserId, '🚫 Спам-блок', `Вы получили спам-блок! Причина: жалоба. Подробнее: @SpamInfoBot`);
-                }
-            });
-        }
+        
         res.json({ success: true });
     });
 });
@@ -692,40 +728,6 @@ app.put('/api/appeals/:id', (req, res) => {
         }
         db.run("UPDATE appeals SET status = ?, adminComment = ? WHERE id = ?", [status, adminComment, id]);
         res.json({ success: true });
-    });
-});
-
-// ============ СИСТЕМНЫЙ БОТ ==========
-function sendBotNotification(userId, title, message) {
-    const msgId = uuidv4();
-    db.run(`INSERT INTO bot_messages (id, userId, title, message, ts) VALUES (?, ?, ?, ?, ?)`,
-        [msgId, userId, title, message, Date.now()]);
-}
-
-app.get('/api/bot/messages/:userId', (req, res) => {
-    db.all("SELECT * FROM bot_messages WHERE userId = ? ORDER BY ts DESC", [req.params.userId], (err, msgs) => {
-        res.json(msgs || []);
-    });
-});
-
-app.post('/api/bot/messages/mark-read', (req, res) => {
-    const { userId } = req.body;
-    db.run("UPDATE bot_messages SET read = 1 WHERE userId = ?", [userId]);
-    res.json({ success: true });
-});
-
-// ============ СПАМ-ИНФО БОТ ==========
-app.post('/api/bot/spam-info', (req, res) => {
-    const { userId } = req.body;
-    db.get("SELECT spamBlocked, spamReason, spamUntil, name FROM users WHERE id = ?", [userId], (err, user) => {
-        if (!user) return res.json({ exists: false });
-        res.json({
-            exists: true,
-            isBlocked: user.spamBlocked === 1,
-            reason: user.spamReason,
-            until: user.spamUntil,
-            name: user.name
-        });
     });
 });
 
@@ -785,7 +787,4 @@ app.post('/api/admin/reset', (req, res) => {
 // ============ ЗАПУСК ==========
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`📱 Мессенджер: http://localhost:${PORT}/`);
-    console.log(`🛡️ Админка: http://localhost:${PORT}/admin.html`);
-    console.log(`🔑 Админ пароль: admin2024`);
 });
