@@ -12,6 +12,7 @@
         th,td{padding:10px;text-align:left;border-bottom:1px solid #1e2d45}
         button{background:#00d4ff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;margin:2px}
         .btn-danger{background:#ff4757;color:#fff}
+        .btn-success{background:#00e676;color:#000}
         .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:20px}
         .stat{background:#0f1520;padding:16px;border-radius:12px;text-align:center}
         .stat-value{font-size:28px;font-weight:700;color:#00d4ff}
@@ -29,15 +30,20 @@
         .tab-content{display:none}
         .tab-content.active{display:block}
         .admin-banner-preview{background:#2b5278;padding:8px;border-radius:8px;margin-top:8px;text-align:center}
+        .backup-status{font-size:12px;margin-top:8px}
+        .backup-status.success{color:#00e676}
+        .backup-status.error{color:#ff4757}
     </style>
 </head>
 <body>
+
 <div id="loginBox" class="card login-box">
     <h2>Admin Panel</h2>
     <input type="password" id="adminPass" style="margin:12px 0">
     <button onclick="adminLogin()">Войти</button>
     <div id="loginError" style="color:#ff4757"></div>
 </div>
+
 <div id="adminPanel" style="display:none">
     <div class="stats" id="stats"></div>
     
@@ -47,12 +53,13 @@
         <div class="tab" onclick="showTab('appeals')">📝 Апелляции</div>
         <div class="tab" onclick="showTab('bot')">📢 @TelegramNotifications</div>
         <div class="tab" onclick="showTab('banner')">📢 Глобальный баннер</div>
+        <div class="tab" onclick="showTab('backup')">💾 Бэкап</div>
         <div class="tab" onclick="showTab('chats')">📢 Каналы</div>
     </div>
     
     <div id="tab-users" class="tab-content active">
         <div class="card">
-            <div class="card-header" style="display:flex;justify-content:space-between;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:16px">
                 <h3>👥 Пользователи</h3>
                 <input type="text" id="searchUsers" placeholder="Поиск..." oninput="filterUsers()" style="width:200px;margin:0">
             </div>
@@ -94,6 +101,15 @@
         </div>
     </div>
     
+    <div id="tab-backup" class="tab-content">
+        <div class="card">
+            <h3>💾 Ручной бэкап данных</h3>
+            <p style="color:#aaa;font-size:13px;margin-bottom:12px">Данные автоматически сохраняются в GitHub каждые 5 минут. Здесь можно запустить бэкап вручную.</p>
+            <button onclick="manualBackup()" class="btn-success" style="padding:10px 20px">📤 Отправить данные в GitHub сейчас</button>
+            <div id="backupStatus" class="backup-status"></div>
+        </div>
+    </div>
+    
     <div id="tab-chats" class="tab-content">
         <div class="card"><h3>📢 Каналы и группы</h3><div id="chatsList"></div></div>
     </div>
@@ -118,6 +134,38 @@ function showTab(tab) {
     document.getElementById(`tab-${tab}`).classList.add('active');
 }
 
+// ============ БЭКАП ============
+async function manualBackup() {
+    const btn = event.target;
+    const oldText = btn.innerText;
+    btn.innerText = '⏳ Отправка...';
+    btn.disabled = true;
+    const statusDiv = document.getElementById('backupStatus');
+    statusDiv.innerHTML = '<span style="color:#f5a623">⏳ Отправка данных в GitHub...</span>';
+    
+    try {
+        const res = await fetch(`${API_URL}/api/admin/backup`, { method: 'POST' });
+        const data = await res.json();
+        if(data.success) {
+            statusDiv.innerHTML = '<span style="color:#00e676">✅ Бэкап запущен! Проверь GitHub через минуту.</span>';
+        } else {
+            statusDiv.innerHTML = '<span style="color:#ff4757">❌ Ошибка: ' + (data.error || 'неизвестная') + '</span>';
+        }
+    } catch(e) {
+        statusDiv.innerHTML = '<span style="color:#ff4757">❌ Ошибка соединения с сервером</span>';
+    }
+    
+    setTimeout(() => {
+        if(statusDiv.innerHTML.includes('✅')) {
+            setTimeout(() => { statusDiv.innerHTML = ''; }, 5000);
+        }
+    }, 3000);
+    
+    btn.innerText = oldText;
+    btn.disabled = false;
+}
+
+// ============ БАННЕР ============
 async function loadBanner() {
     const res = await fetch(`${API_URL}/api/banner`);
     const banner = await res.json();
@@ -131,8 +179,8 @@ function updateBannerPreview() {
     const link = document.getElementById('bannerLink').value;
     const preview = document.getElementById('bannerPreview');
     if(text) {
-        if(link) preview.innerHTML = `<a href="${link}" target="_blank" style="color:#fff;text-decoration:none">📢 ${text}</a>`;
-        else preview.innerHTML = `📢 ${text}`;
+        if(link) preview.innerHTML = `<a href="${link}" target="_blank" style="color:#fff;text-decoration:none">📢 ${escapeHtml(text)}</a>`;
+        else preview.innerHTML = `📢 ${escapeHtml(text)}`;
     } else {
         preview.innerHTML = '<em style="color:#aaa">Баннер не отображается</em>';
     }
@@ -151,17 +199,19 @@ async function saveBanner() {
     alert('Баннер сохранён! Он появится у всех пользователей.');
 }
 
+// ============ СТАТИСТИКА ============
 async function loadStats() {
     const res = await fetch(`${API_URL}/api/stats`);
     const s = await res.json();
     document.getElementById('stats').innerHTML = `
-        <div class="stat"><div class="stat-value">${s.users||0}</div><div>👥</div></div>
+        <div class="stat"><div class="stat-value">${s.users||0}</div><div>👥 Пользователей</div></div>
         <div class="stat"><div class="stat-value">${s.pendingReports||0}</div><div>🚨 Жалоб</div></div>
         <div class="stat"><div class="stat-value">${s.spamBlockedUsers||0}</div><div>🚫 Спам-блок</div></div>
         <div class="stat"><div class="stat-value">${s.frozenUsers||0}</div><div>❄️ Заморозка</div></div>
     `;
 }
 
+// ============ ПОЛЬЗОВАТЕЛИ ============
 async function loadUsers() {
     const res = await fetch(`${API_URL}/api/users`);
     allUsers = await res.json();
@@ -179,16 +229,16 @@ function renderUsers(users) {
         <table><thead><tr><th>Пользователь</th><th>⭐</th><th>Метки</th><th>Статус</th><th>Действия</th></tr></thead>
         <tbody>${users.map(u => `
             <tr>
-                <td><b>${escapeHtml(u.name)}</b><br>@${escapeHtml(u.username)}</td>
-                <td>⭐ ${u.stars}</td>
-                <td>${['verified','scam','fake','bot'].map(t => `<span class="tag tag-${t} ${(u.tags||[]).includes(t)?'selected':''}" onclick="toggleTag('${u.id}','${t}')">${t}</span>`).join('')}</td>
-                <td>${u.banned?'⛔ Бан':u.frozen?'❄️ Заморозка':u.spamBlocked?'🚫 Спам':'✅'}</td>
+                <td><b>${escapeHtml(u.name)}</b><br>@${escapeHtml(u.username)}</div></td>
+                <td>⭐ ${u.stars}</div></td>
+                <td>${['verified','scam','fake','bot'].map(t => `<span class="tag tag-${t} ${(u.tags||[]).includes(t)?'selected':''}" onclick="toggleTag('${u.id}','${t}')">${t}</span>`).join('')}</div></td>
+                <td>${u.banned?'⛔ Бан':u.frozen?'❄️ Заморозка':u.spamBlocked?'🚫 Спам':'✅'}</div></td>
                 <td>
                     <button onclick="addStars('${u.id}')">⭐+</button>
                     <button onclick="toggleAction('${u.id}','banned',${!u.banned})">${u.banned?'Разбан':'Бан'}</button>
                     <button onclick="toggleAction('${u.id}','frozen',${!u.frozen})">${u.frozen?'Разморозить':'Заморозить'}</button>
                     <button onclick="spamBlock('${u.id}')">🚫 Спам</button>
-                </td>
+                 </div></td>
             </tr>
         `).join('')}</tbody></table>
     `;
@@ -207,6 +257,7 @@ async function addStars(id) { let amt=prompt('Сколько?',100); if(amt){ le
 async function toggleAction(id, field, val) { await fetch(`${API_URL}/api/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ [field]: val }) }); loadUsers(); loadStats(); }
 async function spamBlock(id) { let hours=prompt('На сколько часов? (0=навсегда)','24'); if(hours!==null){ let reason=prompt('Причина:'); let until=parseInt(hours)>0?Date.now()+parseInt(hours)*3600000:null; await fetch(`${API_URL}/api/users/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ spamBlocked: true, spamReason: reason, spamUntil: until }) }); loadUsers(); loadStats(); } }
 
+// ============ ЖАЛОБЫ ============
 async function loadReports() {
     const res = await fetch(`${API_URL}/api/reports`);
     const reports = await res.json();
@@ -221,6 +272,7 @@ async function loadReports() {
 async function resolveReport(id, action) { await fetch(`${API_URL}/api/reports/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:'resolved', action }) }); loadReports(); loadStats(); loadChats(); loadUsers(); }
 async function resolveReportWithSpam(id) { let hours=prompt('Спам-блок на часов?','24'); if(hours!==null) await fetch(`${API_URL}/api/reports/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status:'resolved', action:'spam', duration:parseInt(hours) }) }); loadReports(); loadStats(); loadUsers(); }
 
+// ============ АПЕЛЛЯЦИИ ============
 async function loadAppeals() {
     const res = await fetch(`${API_URL}/api/bot/appeals`);
     const appeals = await res.json();
@@ -236,6 +288,7 @@ async function loadAppeals() {
 async function resolveAppeal(id, status) { await fetch(`${API_URL}/api/bot/appeals/${id}`,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status }) }); loadAppeals(); loadUsers(); }
 function resolveAppealWithComment(id,status) { let comment=prompt('Причина отказа:'); if(comment) fetch(`${API_URL}/api/bot/appeals/${id}`,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status, adminComment:comment }) }).then(()=>{ loadAppeals(); loadUsers(); }); }
 
+// ============ КАНАЛЫ ============
 async function loadChats() {
     const res = await fetch(`${API_URL}/api/chats`);
     const chats = await res.json();
@@ -250,8 +303,9 @@ async function loadChats() {
     `).join('') || 'Нет каналов';
 }
 async function toggleChatPrivacy(id, isPublic) { await fetch(`${API_URL}/api/chats/${id}`,{ method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ isPublic }) }); loadChats(); }
-async function deleteChat(id) { if(confirm('Удалить?')){ await fetch(`${API_URL}/api/chats/${id}`,{ method:'DELETE' }); loadChats(); } }
+async function deleteChat(id) { if(confirm('Удалить чат? Все сообщения будут потеряны.')){ await fetch(`${API_URL}/api/chats/${id}`,{ method:'DELETE' }); loadChats(); } }
 
+// ============ УВЕДОМЛЕНИЯ ============
 async function loadUserSelect() {
     const res = await fetch(`${API_URL}/api/users`);
     const users = await res.json();
