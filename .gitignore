@@ -1,0 +1,9 @@
+# Игнорируем файл с данными, чтобы Render НЕ сбрасывал его
+data.json
+
+# Игнорируем зависимости и системные файлы
+node_modules/
+package-lock.json
+.env
+.DS_Store
+*.log
