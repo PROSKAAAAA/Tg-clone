@@ -3,25 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel</title>
+    <title>TG Admin Panel | Полная версия</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui;background:#0a0e17;color:#fff;padding:20px}
+        .container{max-width:1400px;margin:0 auto}
         .card{background:#0f1520;border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #1e2d45}
-        .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px}
-        .stat{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;padding:20px;text-align:center}
+        .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+        .stat-card{background:#0f1520;border:1px solid #1e2d45;border-radius:12px;padding:20px;text-align:center}
         .stat-value{font-size:32px;font-weight:700;color:#00d4ff}
-        .stat-label{font-size:12px;color:#aaa}
+        .stat-label{font-size:12px;color:#aaa;margin-top:4px}
         table{width:100%;border-collapse:collapse}
         th,td{padding:12px;text-align:left;border-bottom:1px solid #1e2d45}
-        input{background:#0a0e17;border:1px solid #1e2d45;padding:8px 12px;border-radius:8px;color:#fff;width:100%}
+        input,select,textarea{background:#0a0e17;border:1px solid #1e2d45;padding:8px 12px;border-radius:8px;color:#fff;width:100%}
         button{background:#00d4ff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;margin:2px}
         .btn-danger{background:#ff4757;color:#fff}
         .btn-warning{background:#f5a623;color:#000}
+        .btn-success{background:#00e676;color:#000}
         .login-box{max-width:400px;margin:100px auto;text-align:center}
-        .error{color:#ff4757;margin-top:12px}
-        .report-item{border-bottom:1px solid #1e2d45;padding:12px}
-        .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;background:#f5a62320;color:#f5a623;border:1px solid #f5a62340}
+        .tabs{display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid #1e2d45;padding-bottom:12px}
+        .tab{padding:8px 20px;cursor:pointer;border-radius:8px;background:#0a0e17}
+        .tab.active{background:#00d4ff;color:#000}
+        .tab-content{display:none}
+        .tab-content.active{display:block}
+        .gift-item,.nft-item,.upgrade-item{background:#0a0e17;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
     </style>
 </head>
 <body>
@@ -30,169 +36,169 @@
     <h2>🛡️ Админ-панель</h2>
     <input type="password" id="adminPass" placeholder="Пароль" style="margin:12px 0">
     <button onclick="adminLogin()">Войти</button>
-    <div id="loginError" class="error"></div>
+    <div id="loginError" style="color:#ff4757;margin-top:12px"></div>
 </div>
 
 <div id="adminPanel" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-        <h1>🛡️ TG Admin Panel</h1>
-        <button onclick="adminLogout()" class="btn-danger">Выйти</button>
-    </div>
-    <div class="stats" id="stats"></div>
-    <div class="card">
-        <h2>👥 Пользователи</h2>
-        <input type="text" id="searchUsers" placeholder="Поиск..." onkeyup="filterUsers()" style="margin-bottom:16px">
-        <div style="overflow-x:auto">
-            <table id="usersTable">
-                <thead><tr><th>Пользователь</th><th>⭐</th><th>Статус</th><th>Действия</th></tr></thead>
-                <tbody id="usersList"></tbody>
-            </table>
+    <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+            <h1>🛡️ TG Admin Panel</h1>
+            <button onclick="adminLogout()" class="btn-danger">Выйти</button>
         </div>
-    </div>
-    <div class="card">
-        <h2>🚨 Жалобы</h2>
-        <div id="reportsList"></div>
+        
+        <div class="stats-grid" id="statsGrid"></div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('users')">👥 Пользователи</div>
+            <div class="tab" onclick="showTab('reports')">🚨 Жалобы</div>
+            <div class="tab" onclick="showTab('gifts')">🎁 Подарки</div>
+            <div class="tab" onclick="showTab('nft')">🏷️ NFT</div>
+            <div class="tab" onclick="showTab('upgrades')">✨ Улучшения</div>
+            <div class="tab" onclick="showTab('chats')">📢 Каналы/Группы</div>
+        </div>
+        
+        <div id="tab-users" class="tab-content active">
+            <div class="card">
+                <div class="card-header"><h3>👥 Пользователи</h3><input type="text" id="searchUsers" placeholder="Поиск..." onkeyup="filterUsers()" style="width:200px"></div>
+                <div style="overflow-x:auto"><table id="usersTable"><thead><tr><th>Пользователь</th><th>⭐</th><th>Статус</th><th>NFT</th><th>Действия</th></tr></thead><tbody id="usersList"></tbody></table></div>
+            </div>
+        </div>
+        
+        <div id="tab-reports" class="tab-content">
+            <div class="card"><div class="card-header"><h3>🚨 Жалобы</h3></div><div id="reportsList"></div></div>
+        </div>
+        
+        <div id="tab-gifts" class="tab-content">
+            <div class="card">
+                <div class="card-header"><h3>🎁 Подарки</h3><button onclick="openGiftModal()">+ Добавить</button></div>
+                <div id="giftsList"></div>
+            </div>
+        </div>
+        
+        <div id="tab-nft" class="tab-content">
+            <div class="card">
+                <div class="card-header"><h3>🏷️ NFT-коллекции</h3><button onclick="openNFTModal()">+ Создать коллекцию</button></div>
+                <div id="nftList"></div>
+            </div>
+        </div>
+        
+        <div id="tab-upgrades" class="tab-content">
+            <div class="card">
+                <div class="card-header"><h3>✨ Улучшения (Лутбоксы)</h3><button onclick="openUpgradeModal()">+ Добавить</button></div>
+                <div id="upgradesList"></div>
+            </div>
+        </div>
+        
+        <div id="tab-chats" class="tab-content">
+            <div class="card"><div class="card-header"><h3>📢 Каналы и группы</h3></div><div id="chatsList"></div></div>
+        </div>
     </div>
 </div>
 
+<!-- Модалки -->
+<div id="giftModal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+    <div class="modal-content" style="background:#0f1520;border-radius:16px;width:500px;padding:20px"><h3 id="modalTitle">Добавить подарок</h3><input id="giftName" placeholder="Название"><input id="giftEmoji" placeholder="Эмодзи" style="margin-top:10px"><input id="giftPrice" type="number" placeholder="Цена" style="margin-top:10px"><input id="giftStock" type="number" placeholder="Количество" style="margin-top:10px"><select id="giftType" style="margin-top:10px"><option value="emoji">Эмодзи</option><option value="tgs">TGS</option><option value="gif">GIF</option></select><select id="giftRarity" style="margin-top:10px"><option value="common">Обычный</option><option value="rare">Редкий</option><option value="epic">Эпический</option><option value="legendary">Легендарный</option></select><input id="giftFileUrl" placeholder="Ссылка на файл (опционально)" style="margin-top:10px"><div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end"><button onclick="closeModal('giftModal')">Отмена</button><button onclick="saveGift()">Сохранить</button></div></div>
+</div>
+
+<div id="nftModal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+    <div class="modal-content" style="background:#0f1520;border-radius:16px;width:500px;padding:20px"><h3>Создать NFT-коллекцию</h3><input id="nftName" placeholder="Название"><input id="nftEmoji" placeholder="Эмодзи" style="margin-top:10px"><input id="nftPrice" type="number" placeholder="Цена" style="margin-top:10px"><input id="nftMaxSupply" type="number" placeholder="Макс. количество (0=безлимит)" style="margin-top:10px"><select id="nftRarity" style="margin-top:10px"><option value="common">Обычный</option><option value="rare">Редкий</option><option value="epic">Эпический</option><option value="legendary">Легендарный</option></select><input id="nftFileUrl" placeholder="Ссылка на файл" style="margin-top:10px"><div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end"><button onclick="closeModal('nftModal')">Отмена</button><button onclick="saveNFT()">Создать</button></div></div>
+</div>
+
+<div id="upgradeModal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+    <div class="modal-content" style="background:#0f1520;border-radius:16px;width:500px;padding:20px"><h3>Добавить улучшение</h3><input id="upgradeName" placeholder="Название"><input id="upgradePrice" type="number" placeholder="Цена" style="margin-top:10px"><input id="upgradeChance" type="number" placeholder="Шанс выпадения %" style="margin-top:10px"><input id="upgradeModelUrl" placeholder="Ссылка на модель .tgs" style="margin-top:10px"><div style="margin-top:10px"><label>Награды:</label><div id="rewardsContainer"></div><button onclick="addReward()" style="margin-top:8px">+ Добавить награду</button></div><div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end"><button onclick="closeModal('upgradeModal')">Отмена</button><button onclick="saveUpgrade()">Сохранить</button></div></div>
+</div>
+
 <script>
-    const API_URL = '';
-    let allUsers = [];
-    
-    async function adminLogin() {
-        const pass = document.getElementById('adminPass').value;
-        if(pass === 'admin2024') {
-            document.getElementById('loginBox').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'block';
-            loadStats(); loadUsers(); loadReports();
-        } else {
-            document.getElementById('loginError').innerText = 'Неверный пароль';
-        }
-    }
-    
-    function adminLogout() {
-        document.getElementById('loginBox').style.display = 'block';
-        document.getElementById('adminPanel').style.display = 'none';
-        document.getElementById('adminPass').value = '';
-    }
-    
-    async function loadStats() {
-        try {
-            const res = await fetch(`${API_URL}/api/stats`);
-            const stats = await res.json();
-            document.getElementById('stats').innerHTML = `
-                <div class="stat"><div class="stat-value">${stats.users||0}</div><div class="stat-label">👥 Пользователей</div></div>
-                <div class="stat"><div class="stat-value">${stats.messages||0}</div><div class="stat-label">💬 Сообщений</div></div>
-                <div class="stat"><div class="stat-value">${stats.pendingReports||0}</div><div class="stat-label">🚨 Жалоб ожидает</div></div>
-            `;
-        } catch(e) { console.error(e); }
-    }
-    
-    async function loadUsers() {
-        try {
-            const res = await fetch(`${API_URL}/api/users`);
-            allUsers = await res.json();
-            renderUsers(allUsers);
-        } catch(e) { console.error(e); }
-    }
-    
-    function filterUsers() {
-        const search = document.getElementById('searchUsers').value.toLowerCase();
-        const filtered = allUsers.filter(u => u.name.toLowerCase().includes(search) || u.username.toLowerCase().includes(search));
-        renderUsers(filtered);
-    }
-    
-    function renderUsers(users) {
-        document.getElementById('usersList').innerHTML = users.map(u => `
-            <tr>
-                <td><strong>${escapeHtml(u.name)}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></td>
-                <td>⭐ ${u.stars||0}</td>
-                <td>${u.banned ? '<span style="color:#ff4757">⛔ Забанен</span>' : u.muted ? '<span style="color:#f5a623">🔇 Замьючен</span>' : '<span style="color:#00e676">✅ Активен</span>'}</td>
-                <td>
-                    <button onclick="addStars('${u.id}')">⭐+</button>
-                    <button onclick="toggleBan('${u.id}', ${!u.banned})" class="${!u.banned ? 'btn-danger' : ''}">${u.banned ? 'Разбан' : 'Бан'}</button>
-                    <button onclick="toggleMute('${u.id}', ${!u.muted})" class="${!u.muted ? 'btn-warning' : ''}">${u.muted ? 'Снять мьют' : 'Мьют'}</button>
-                </td>
-            </tr>
-        `).join('');
-    }
-    
-    async function addStars(userId) {
-        const amount = prompt('Сколько звёзд выдать?', '100');
-        if(!amount) return;
-        const user = allUsers.find(u => u.id === userId);
-        await fetch(`${API_URL}/api/users/${userId}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ stars: (user.stars||0) + parseInt(amount) })
-        });
-        showToast(`Выдано ${amount} ⭐`);
-        loadUsers();
-    }
-    
-    async function toggleBan(userId, ban) {
-        await fetch(`${API_URL}/api/users/${userId}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ banned: ban })
-        });
-        loadUsers();
-        showToast(ban ? 'Пользователь забанен' : 'Бан снят');
-    }
-    
-    async function toggleMute(userId, mute) {
-        await fetch(`${API_URL}/api/users/${userId}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ muted: mute })
-        });
-        loadUsers();
-        showToast(mute ? 'Пользователь замьючен' : 'Мьют снят');
-    }
-    
-    async function loadReports() {
-        try {
-            const res = await fetch(`${API_URL}/api/reports`);
-            const reports = await res.json();
-            const pending = reports.filter(r => r.status === 'pending');
-            if(pending.length === 0) {
-                document.getElementById('reportsList').innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">✨ Нет жалоб</div>';
-                return;
-            }
-            document.getElementById('reportsList').innerHTML = pending.map(r => `
-                <div class="report-item">
-                    <div><strong>⚠️ ${escapeHtml(r.reason)}</strong> <span class="badge">ожидает</span></div>
-                    <div style="margin:8px 0">📝 от @${escapeHtml(r.fromUserId)} на @${escapeHtml(r.againstUserId)}</div>
-                    ${r.comment ? `<div style="background:#0a0e17;padding:8px;border-radius:8px;margin:8px 0">💬 ${escapeHtml(r.comment)}</div>` : ''}
-                    <div>
-                        <button onclick="resolveReport('${r.id}', 'ban')">🚫 Бан</button>
-                        <button onclick="resolveReport('${r.id}', 'mute')">🔇 Мьют</button>
-                        <button onclick="resolveReport('${r.id}', 'reject')" class="btn-danger">✗ Отказать</button>
-                    </div>
-                </div>
-            `).join('');
-        } catch(e) { console.error(e); }
-    }
-    
-    async function resolveReport(reportId, action) {
-        const status = action === 'reject' ? 'rejected' : 'resolved';
-        await fetch(`${API_URL}/api/reports/${reportId}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ status, action: action === 'reject' ? '' : action })
-        });
-        showToast('Жалоба обработана');
-        loadStats(); loadReports(); loadUsers();
-    }
-    
-    function showToast(msg) {
-        const toast = document.createElement('div');
-        toast.textContent = msg;
-        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2b5278;padding:10px 20px;border-radius:20px;z-index:1000';
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2500);
-    }
-    
-    function escapeHtml(str) {
-        if(!str) return '';
-        return String(str).replace(/[&<>]/g, m => m==='&'?'&amp;':m==='<'?'&lt;':'&gt;');
-    }
+const API_URL = '';
+let allUsers = [], currentTab = 'users';
+
+async function adminLogin() {
+    const pass = document.getElementById('adminPass').value;
+    if(pass === 'admin2024') {
+        document.getElementById('loginBox').style.display = 'none';
+        document.getElementById('adminPanel').style.display = 'block';
+        loadStats(); loadUsers(); loadReports(); loadGifts(); loadNFT(); loadUpgrades(); loadChats();
+    } else { document.getElementById('loginError').innerText = 'Неверный пароль'; }
+}
+function adminLogout() { location.reload(); }
+function showTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+}
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+
+async function loadStats() {
+    const res = await fetch(`${API_URL}/api/stats`);
+    const stats = await res.json();
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><div class="stat-value">${stats.users||0}</div><div>👥 Пользователей</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.messages||0}</div><div>💬 Сообщений</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.pendingReports||0}</div><div>🚨 Жалоб</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.chats||0}</div><div>📢 Каналов/Групп</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.nftCollections||0}</div><div>🏷️ NFT коллекций</div></div>
+    `;
+}
+
+async function loadUsers() {
+    const res = await fetch(`${API_URL}/api/users`);
+    allUsers = await res.json();
+    renderUsers(allUsers);
+}
+function filterUsers() { const search = document.getElementById('searchUsers').value.toLowerCase(); renderUsers(allUsers.filter(u => u.name.toLowerCase().includes(search) || u.username.toLowerCase().includes(search))); }
+function renderUsers(users) { document.getElementById('usersList').innerHTML = users.map(u => `<tr><td><strong>${u.name}</strong><br><span style="font-size:12px;color:#aaa">@${u.username}</span></td><td>⭐ ${u.stars||0}</td><td>${u.banned?'⛔ Забанен':u.muted?'🔇 Замьючен':'✅ Активен'}</td><td><button onclick="viewNFT('${u.id}')">🏷️</button></td><td><button onclick="addStars('${u.id}')">⭐+</button> <button onclick="toggleBan('${u.id}',${!u.banned})" class="${!u.banned?'btn-danger':''}">${u.banned?'Разбан':'Бан'}</button> <button onclick="toggleMute('${u.id}',${!u.muted})" class="${!u.muted?'btn-warning':''}">${u.muted?'Снять мьют':'Мьют'}</button></td></tr>`).join(''); }
+async function addStars(id) { let amt=prompt('Сколько звёзд?',100); if(amt){ let u=allUsers.find(u=>u.id===id); await fetch(`${API_URL}/api/users/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars:(u.stars||0)+parseInt(amt)})}); loadUsers(); } }
+async function toggleBan(id,ban) { await fetch(`${API_URL}/api/users/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({banned:ban})}); loadUsers(); }
+async function toggleMute(id,mute) { await fetch(`${API_URL}/api/users/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({muted:mute})}); loadUsers(); }
+async function viewNFT(userId) { const res = await fetch(`${API_URL}/api/nft/user/${userId}`); const items = await res.json(); alert(items.map(i=>`${i.emoji} ${i.collectionName} #${i.serialNumber}`).join('\n')||'Нет NFT'); }
+
+async function loadReports() {
+    const res = await fetch(`${API_URL}/api/reports`);
+    const reports = await res.json();
+    const pending = reports.filter(r=>r.status==='pending');
+    document.getElementById('reportsList').innerHTML = pending.map(r=>`<div style="border-bottom:1px solid #1e2d45;padding:12px"><strong>⚠️ ${r.reason}</strong> от @${r.fromUserId} на @${r.againstUserId}<br>${r.comment||''}<br><button onclick="resolveReport('${r.id}','ban')">🚫 Бан</button> <button onclick="resolveReport('${r.id}','mute')">🔇 Мьют</button> <button onclick="resolveReport('${r.id}','reject')" class="btn-danger">✗ Отказать</button></div>`).join('')||'<div style="padding:20px;text-align:center">✨ Нет жалоб</div>';
+}
+async function resolveReport(id,action) { const status=action==='reject'?'rejected':'resolved'; await fetch(`${API_URL}/api/reports/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,action:action==='reject'?'':action})}); loadReports(); loadStats(); }
+
+async function loadGifts() {
+    const res = await fetch(`${API_URL}/api/gifts`);
+    const gifts = await res.json();
+    document.getElementById('giftsList').innerHTML = `<table><thead><th>Подарок</th><th>Цена</th><th>Остаток</th><th>Редкость</th><th></th></thead><tbody>${gifts.map(g=>`<tr><td><span style="font-size:24px">${g.emoji}</span> ${g.name}</td><td>⭐ ${g.price}</td><td>${g.stock}</td><td>${g.rarity}</td><td><button onclick="deleteGift('${g.id}')" class="btn-danger">🗑️</button></td></tr>`).join('')}</tbody></table>`;
+}
+function openGiftModal() { openModal('giftModal'); document.getElementById('giftName').value=''; document.getElementById('giftEmoji').value='🎁'; document.getElementById('giftPrice').value=100; document.getElementById('giftStock').value=100; }
+async function saveGift() { await fetch(`${API_URL}/api/gifts`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('giftName').value,emoji:document.getElementById('giftEmoji').value,price:parseInt(document.getElementById('giftPrice').value),stock:parseInt(document.getElementById('giftStock').value),type:document.getElementById('giftType').value,rarity:document.getElementById('giftRarity').value,fileUrl:document.getElementById('giftFileUrl').value})}); closeModal('giftModal'); loadGifts(); }
+async function deleteGift(id) { if(confirm('Удалить подарок?')){ await fetch(`${API_URL}/api/gifts/${id}`,{method:'DELETE'}); loadGifts(); } }
+
+async function loadNFT() {
+    const res = await fetch(`${API_URL}/api/nft/collections`);
+    const collections = await res.json();
+    document.getElementById('nftList').innerHTML = collections.map(c=>`<div class="gift-item"><div><span style="font-size:24px">${c.emoji}</span> ${c.name}<br><span style="font-size:12px">⭐ ${c.price} | ${c.minted}/${c.maxSupply||'∞'} | ${c.rarity}</span></div><div><button onclick="mintNFT('${c.id}')">🏷️ Минт</button> <button onclick="deleteNFT('${c.id}')" class="btn-danger">🗑️</button></div></div>`).join('')||'Нет коллекций';
+}
+function openNFTModal() { openModal('nftModal'); }
+async function saveNFT() { await fetch(`${API_URL}/api/nft/collections`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('nftName').value,emoji:document.getElementById('nftEmoji').value,price:parseInt(document.getElementById('nftPrice').value),maxSupply:parseInt(document.getElementById('nftMaxSupply').value),rarity:document.getElementById('nftRarity').value,fileUrl:document.getElementById('nftFileUrl').value,type:'tgs'})}); closeModal('nftModal'); loadNFT(); }
+async function mintNFT(id) { await fetch(`${API_URL}/api/nft/mint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collectionId:id,ownerId:null})}); alert('NFT выпущен'); loadNFT(); }
+async function deleteNFT(id) { if(confirm('Удалить коллекцию?')){ await fetch(`${API_URL}/api/nft/collections/${id}`,{method:'DELETE'}); loadNFT(); } }
+
+async function loadUpgrades() {
+    const res = await fetch(`${API_URL}/api/upgrades`);
+    const upgrades = await res.json();
+    document.getElementById('upgradesList').innerHTML = upgrades.map(u=>`<div class="gift-item"><div><strong>✨ ${u.name}</strong><br>💰 ${u.price}⭐ | 🎲 ${u.chance}%</div><div><button onclick="deleteUpgrade('${u.id}')" class="btn-danger">🗑️</button></div></div>`).join('')||'Нет улучшений';
+}
+function openUpgradeModal() { openModal('upgradeModal'); document.getElementById('rewardsContainer').innerHTML=''; addReward(); }
+let rewardIndex=0;
+function addReward() { const div=document.createElement('div'); div.className='reward-item'; div.style.marginTop='8px'; div.innerHTML=`<select><option value="color">🎨 Цвет</option><option value="background">🖼️ Фон</option><option value="gift">🎁 Подарок</option></select> <input placeholder="Значение" style="width:150px"> <input type="number" placeholder="Шанс %" style="width:80px"> <button onclick="this.parentElement.remove()" style="background:#ff4757">✕</button>`; document.getElementById('rewardsContainer').appendChild(div); }
+async function saveUpgrade() { const rewards=[]; document.querySelectorAll('#rewardsContainer .reward-item').forEach(r=>{ const select=r.querySelector('select'); const inputs=r.querySelectorAll('input'); rewards.push({type:select.value,value:inputs[0].value,probability:parseInt(inputs[1].value)}); }); await fetch(`${API_URL}/api/upgrades`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('upgradeName').value,price:parseInt(document.getElementById('upgradePrice').value),chance:parseInt(document.getElementById('upgradeChance').value),modelUrl:document.getElementById('upgradeModelUrl').value,rewards})}); closeModal('upgradeModal'); loadUpgrades(); }
+async function deleteUpgrade(id) { if(confirm('Удалить улучшение?')){ await fetch(`${API_URL}/api/upgrades/${id}`,{method:'DELETE'}); loadUpgrades(); } }
+
+async function loadChats() {
+    const res = await fetch(`${API_URL}/api/chats`);
+    const chats = await res.json();
+    document.getElementById('chatsList').innerHTML = chats.map(c=>`<div class="gift-item"><div>${c.type==='channel'?'📢':'👥'} <strong>${c.title}</strong><br><span style="font-size:12px">${c.description||''}</span></div><div><button onclick="deleteChat('${c.id}')" class="btn-danger">🗑️</button></div></div>`).join('')||'Нет каналов/групп';
+}
+async function deleteChat(id) { if(confirm('Удалить чат?')){ await fetch(`${API_URL}/api/chats/${id}`,{method:'DELETE'}); loadChats(); } }
 </script>
 </body>
 </html>
