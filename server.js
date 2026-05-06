@@ -113,16 +113,18 @@ db.serialize(() => {
         mintedAt INTEGER
     )`);
     
-    // Дефолтные фоны (10 цветов как в Telegram)
+    // Дефолтные фоны (12 цветов, включая black и onyx black)
     const defaultBackgrounds = JSON.stringify([
-        { type: 'color', value: '#182533', probability: 15, name: 'Тёмный' },
-        { type: 'color', value: '#2b5278', probability: 15, name: 'Синий' },
-        { type: 'color', value: '#2b2b52', probability: 10, name: 'Фиолетовый' },
-        { type: 'color', value: '#1e3a2f', probability: 10, name: 'Зелёный' },
-        { type: 'color', value: '#3d2b1f', probability: 10, name: 'Коричневый' },
-        { type: 'color', value: '#2b1f3d', probability: 10, name: 'Пурпурный' },
-        { type: 'color', value: '#3d1f2b', probability: 10, name: 'Бордовый' },
-        { type: 'color', value: '#1f3d3d', probability: 10, name: 'Бирюзовый' },
+        { type: 'color', value: '#000000', probability: 12, name: 'Black' },
+        { type: 'color', value: '#0a0a0a', probability: 10, name: 'Onyx Black' },
+        { type: 'color', value: '#182533', probability: 10, name: 'Тёмный' },
+        { type: 'color', value: '#2b5278', probability: 10, name: 'Синий' },
+        { type: 'color', value: '#2b2b52', probability: 8, name: 'Фиолетовый' },
+        { type: 'color', value: '#1e3a2f', probability: 8, name: 'Зелёный' },
+        { type: 'color', value: '#3d2b1f', probability: 8, name: 'Коричневый' },
+        { type: 'color', value: '#2b1f3d', probability: 8, name: 'Пурпурный' },
+        { type: 'color', value: '#3d1f2b', probability: 8, name: 'Бордовый' },
+        { type: 'color', value: '#1f3d3d', probability: 8, name: 'Бирюзовый' },
         { type: 'color', value: '#3d3d1f', probability: 5, name: 'Оливковый' },
         { type: 'color', value: '#1f1f3d', probability: 5, name: 'Тёмно-синий' }
     ]);
